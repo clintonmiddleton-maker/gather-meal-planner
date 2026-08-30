@@ -125,7 +125,11 @@ body{
 
 /* ---------- Per-person rows (signature element) ---------- */
 .person-row{display:flex;align-items:center;gap:4px;font-size:10.5px;line-height:1.3;}
-.person-dot-mini{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.person-dot-mini{
+  width:15px;height:15px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8px;line-height:1;
+}
 .person-meal{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
 .person-meal.empty{color:var(--ink-soft);opacity:0.5;font-style:italic;}
 .person-warn{color:var(--conflict);font-weight:700;font-size:11px;flex-shrink:0;}
@@ -149,8 +153,29 @@ body{
 .mobile-slot-card:hover{border-color:var(--rust-dim);}
 .mobile-slot-label{font-family:'Fraunces',serif;font-weight:600;font-size:14px;color:var(--ink);margin-bottom:10px;}
 .person-row.large{font-size:14.5px;gap:8px;padding:3px 0;}
-.person-row.large .person-dot-mini{width:10px;height:10px;}
+.person-row.large .person-dot-mini{width:17px;height:17px;font-size:9px;}
 .flex-row{display:flex;gap:8px;}
+
+/* ---------- Daily totals (collapsed by default) ---------- */
+.nutrition-toggle{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);
+  background:none;border:none;cursor:pointer;padding:0;margin-bottom:14px;
+}
+.nutrition-toggle:hover{color:var(--ink);}
+.nutrition-panel{
+  background:var(--card);border:1px solid var(--line);border-radius:6px;
+  padding:12px 14px;margin-bottom:16px;display:none;
+}
+.nutrition-panel.open{display:block;}
+.nutrition-row{display:flex;align-items:baseline;gap:8px;font-size:12.5px;padding:5px 0;flex-wrap:wrap;}
+.nutrition-row .swatch-mini{
+  width:15px;height:15px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:8px;
+}
+.nutrition-row .nutrition-name{font-weight:600;min-width:80px;}
+.nutrition-row .nutrition-figs{font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
+.nutrition-missing{font-size:10.5px;color:var(--mustard);}
 
 /* ---------- Settings menu ---------- */
 .settings-menu{position:relative;}
@@ -1232,7 +1257,7 @@ function statusLabel(status){
 
 function renderLegend(){
   var html = state.family.map(function(m){
-    return '<div style="display:flex;align-items:center;gap:6px;"><div class="person-dot-mini" style="background:'+m.color+';width:10px;height:10px;"></div><span>'+escapeHtml(m.name)+'</span></div>';
+    return '<div style="display:flex;align-items:center;gap:6px;"><div class="person-dot-mini" style="background:'+m.color+';">'+escapeHtml(m.name.trim().charAt(0).toUpperCase())+'</div><span>'+escapeHtml(m.name)+'</span></div>';
   }).join('');
   html += '<div style="display:flex;align-items:center;gap:6px;"><span class="person-warn">!</span><span>conflicts with their diet/avoid list</span></div>';
   html += '<div style="display:flex;align-items:center;gap:6px;"><span class="person-warn caution">·</span><span>not marked kid-friendly</span></div>';
@@ -1301,7 +1326,7 @@ function personRowHtml(entry, m, sizeClass){
   } else {
     label = '\u2014';
   }
-  return '<div class="person-row'+(sizeClass?' '+sizeClass:'')+'" title="'+escapeAttr(m.name+': '+label)+'"><span class="person-dot-mini" style="background:'+m.color+';"></span><span class="person-meal'+(pe?'':' empty')+'">'+escapeHtml(label)+'</span>'+warn+'</div>';
+  return '<div class="person-row'+(sizeClass?' '+sizeClass:'')+'" title="'+escapeAttr(m.name+': '+label)+'"><span class="person-dot-mini" style="background:'+m.color+';">'+escapeHtml(m.name.trim().charAt(0).toUpperCase())+'</span><span class="person-meal'+(pe?'':' empty')+'">'+escapeHtml(label)+'</span>'+warn+'</div>';
 }
 
 function updatePlannerControls(){
@@ -1355,6 +1380,55 @@ function renderWeekGrid(){
   });
 }
 
+var nutritionPanelOpen = false;
+
+function computeDayNutrition(day, personId){
+  var total = {cal:0, protein:0, carbs:0, fat:0};
+  var missing = false;
+  MEAL_SLOTS.forEach(function(slotKey){
+    var key = day+'-'+slotKey;
+    var entry = state.plan[key];
+    if(!entry) return;
+    var pe = entry[personId];
+    if(!pe) return;
+    if(pe.type === 'recipe'){
+      var r = findRecipe(pe.recipeId);
+      if(r){
+        total.cal += r.nutrition.cal;
+        total.protein += r.nutrition.protein;
+        total.carbs += r.nutrition.carbs;
+        total.fat += r.nutrition.fat;
+      } else {
+        missing = true;
+      }
+    } else if(pe.type === 'custom'){
+      missing = true;
+    }
+  });
+  return { total: total, missing: missing };
+}
+
+function renderNutritionPanel(){
+  var toggleBtn = document.getElementById('nutrition-toggle-btn');
+  var panel = document.getElementById('nutrition-panel');
+  if(!toggleBtn || !panel) return;
+  panel.classList.toggle('open', nutritionPanelOpen);
+  toggleBtn.textContent = nutritionPanelOpen ? '▾ Hide today\u2019s totals' : '▸ Show today\u2019s totals';
+  if(!nutritionPanelOpen) return;
+
+  panel.innerHTML = state.family.map(function(m){
+    var result = computeDayNutrition(dayViewSelectedDay, m.id);
+    var t = result.total;
+    var targetText = m.calorieTarget ? (' of '+m.calorieTarget+' kcal target') : ' kcal';
+    return '<div class="nutrition-row">'+
+      '<span class="swatch-mini" style="background:'+m.color+';">'+escapeHtml(m.name.trim().charAt(0).toUpperCase())+'</span>'+
+      '<span class="nutrition-name">'+escapeHtml(m.name)+'</span>'+
+      '<span class="nutrition-figs">'+t.cal+targetText+' \u00b7 '+t.protein+'g protein \u00b7 '+t.carbs+'g carbs \u00b7 '+t.fat+'g fat</span>'+
+      (result.missing ? '<span class="nutrition-missing">+ typed-in meal(s) not counted</span>' : '')+
+    '</div>';
+  }).join('');
+}
+
 function renderDayView(){
   var container = document.getElementById('planner-day-view');
   if(!container) return;
@@ -1371,7 +1445,10 @@ function renderDayView(){
     return '<div class="mobile-slot-card" data-key="'+key+'"><div class="mobile-slot-label">'+MEAL_SLOT_LABEL[slotKey]+'</div>'+rowsHtml+'</div>';
   }).join('');
 
-  container.innerHTML = '<div class="day-pills">'+pillsHtml+'</div>'+cardsHtml;
+  container.innerHTML = '<div class="day-pills">'+pillsHtml+'</div>'+
+    '<button class="nutrition-toggle" id="nutrition-toggle-btn" type="button"></button>'+
+    '<div class="nutrition-panel" id="nutrition-panel"></div>'+
+    cardsHtml;
 
   Array.prototype.forEach.call(container.querySelectorAll('.day-pill'), function(pill){
     pill.addEventListener('click', function(){
@@ -1382,6 +1459,11 @@ function renderDayView(){
   Array.prototype.forEach.call(container.querySelectorAll('.mobile-slot-card'), function(card){
     card.addEventListener('click', function(){ openMealSlot(card.getAttribute('data-key')); });
   });
+  document.getElementById('nutrition-toggle-btn').addEventListener('click', function(){
+    nutritionPanelOpen = !nutritionPanelOpen;
+    renderNutritionPanel();
+  });
+  renderNutritionPanel();
 }
 
 function openMealSlot(key){
@@ -1579,20 +1661,35 @@ function openRecipeDetail(id){
   document.getElementById('recipe-close-btn').addEventListener('click', closeModal);
   document.getElementById('recipe-edit-btn').addEventListener('click', function(){ openRecipeForm(r); });
   document.getElementById('recipe-delete-btn').addEventListener('click', function(){
-    if(confirm('Delete "'+r.name+'"? This also removes it from any planned meals.')){
-      state.recipes = state.recipes.filter(function(x){ return x.id !== r.id; });
-      [state.plan, state.weekTemplate].forEach(function(planObj){
-        Object.keys(planObj).forEach(function(k){
-          var entry = planObj[k];
-          if(!entry) return;
-          Object.keys(entry).forEach(function(personId){
-            var pe = entry[personId];
-            if(pe && pe.type==='recipe' && pe.recipeId === r.id) entry[personId] = null;
-          });
+    openDeleteRecipeConfirm(r);
+  });
+}
+
+function openDeleteRecipeConfirm(r){
+  var html = '<div class="modal-head"><div class="modal-title">Delete this recipe?</div><button class="modal-close" id="modal-close-btn">&times;</button></div>'+
+    '<p style="font-size:14px;line-height:1.5;margin-bottom:20px;">This removes <strong>'+escapeHtml(r.name)+'</strong> from the library and clears it from any planned meals, this week and in your usual template. This can\u2019t be undone.</p>'+
+    '<div class="modal-actions">'+
+      '<button class="btn btn-ghost" id="delete-cancel-btn" type="button">Cancel</button>'+
+      '<button class="btn btn-rust" id="delete-confirm-btn" type="button">Yes, delete it</button>'+
+    '</div>';
+
+  openModal(html);
+  var backToDetail = function(){ openRecipeDetail(r.id); };
+  document.getElementById('modal-close-btn').addEventListener('click', backToDetail);
+  document.getElementById('delete-cancel-btn').addEventListener('click', backToDetail);
+  document.getElementById('delete-confirm-btn').addEventListener('click', function(){
+    state.recipes = state.recipes.filter(function(x){ return x.id !== r.id; });
+    [state.plan, state.weekTemplate].forEach(function(planObj){
+      Object.keys(planObj).forEach(function(k){
+        var entry = planObj[k];
+        if(!entry) return;
+        Object.keys(entry).forEach(function(personId){
+          var pe = entry[personId];
+          if(pe && pe.type==='recipe' && pe.recipeId === r.id) entry[personId] = null;
         });
       });
-      saveState(); renderRecipes(); renderPlanner(); renderGrocery(); closeModal();
-    }
+    });
+    saveState(); renderRecipes(); renderPlanner(); renderGrocery(); closeModal();
   });
 }
 
