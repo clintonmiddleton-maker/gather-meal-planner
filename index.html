@@ -411,7 +411,11 @@ select{
         <div class="section-title">Recipe library</div>
         <div class="section-sub">Filter by diet or meal type. Click a card for the full recipe.</div>
       </div>
-      <button class="btn btn-rust" id="new-recipe-btn" type="button">+ New recipe</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="import-recipe-btn" type="button">📷 Import from photo</button>
+        <input type="file" id="import-recipe-input" accept="image/*" style="display:none;">
+        <button class="btn btn-rust" id="new-recipe-btn" type="button">+ New recipe</button>
+      </div>
     </div>
     <div class="recipe-search-row">
       <input type="text" id="recipe-search" placeholder="Search recipes…" style="width:100%;max-width:320px;font-family:'Inter',sans-serif;font-size:14px;padding:9px 10px;border:1px solid var(--line-strong);border-radius:3px;background:var(--card);color:var(--ink);">
@@ -1028,6 +1032,26 @@ function seedRecipes(){
         {name:'Olive oil',qty:'2',unit:'tsp',cat:'pantry'}
       ],
       steps:['Toss cooked spaghetti with chickpeas and stir-fried veg.', 'Serve with a side of green salad.']
+    },
+    { id:'r35', name:'Curry & Chilli Fried Rice with Chicken', mealType:'dinner', dietType:'omnivore', contains:['spicy'], kidFriendly:false,
+      servings:1, prepMin:10, cookMin:15, nutrition:{cal:720,protein:53,carbs:87,fat:16,fiber:6},
+      ingredients:[
+        {name:'Spring onion',qty:'55',unit:'g',cat:'produce'},
+        {name:'Red bell pepper',qty:'55',unit:'g',cat:'produce'},
+        {name:'Olive oil',qty:'10',unit:'g',cat:'pantry'},
+        {name:'Chicken breast fillet, raw',qty:'210',unit:'g',cat:'protein'},
+        {name:'Brown rice, uncooked',qty:'100',unit:'g',cat:'pantry'},
+        {name:'Chilli powder',qty:'1',unit:'tsp',cat:'pantry'},
+        {name:'Curry powder',qty:'1',unit:'tsp',cat:'pantry'}
+      ],
+      steps:[
+        'Rinse the rice, then cook in lightly salted water according to the packet instructions.',
+        'Dice the peppers and chop the spring onions.',
+        'Season and slice the chicken. Pan-fry in half the oil over medium-high heat for 5-7 minutes until no longer pink in the middle.',
+        'Add the peppers and spring onion to the pan and fry for a few more minutes.',
+        'Remove the chicken and vegetables. Add the remaining oil and lightly fry the rice with the curry and chilli powder.',
+        'Return the chicken and vegetables to the pan, stir everything together, and serve.'
+      ]
     }
   ];
 }
@@ -1572,9 +1596,10 @@ function openRecipeDetail(id){
   });
 }
 
-function openRecipeForm(existing){
+function openRecipeForm(existing, isImported){
   var r = existing || { id:uid('r'), name:'', mealType:'dinner', dietType:'omnivore', contains:[], kidFriendly:false,
     servings:4, prepMin:10, cookMin:20, nutrition:{cal:0,protein:0,carbs:0,fat:0,fiber:0}, ingredients:[], steps:[] };
+  var isEditingRecipe = state.recipes.some(function(x){ return x.id===r.id; });
 
   var mealOpts = MEAL_TYPES.map(function(mt){ return '<option value="'+mt+'"'+(r.mealType===mt?' selected':'')+'>'+mt+'</option>'; }).join('');
   var dietOpts = Object.keys(DIET_LABEL).map(function(d){ return '<option value="'+d+'"'+(r.dietType===d?' selected':'')+'>'+DIET_LABEL[d]+'</option>'; }).join('');
@@ -1584,7 +1609,9 @@ function openRecipeForm(existing){
   var ingredientsText = r.ingredients.map(function(i){ return i.qty+' '+i.unit+' '+i.name+' ['+i.cat+']'; }).join('\n');
   var stepsText = r.steps.join('\n');
 
-  var html = '<div class="modal-head"><div class="modal-title">'+(existing?'Edit recipe':'New recipe')+'</div><button class="modal-close" id="modal-close-btn">&times;</button></div>'+
+  var titleText = isEditingRecipe ? 'Edit recipe' : (isImported ? 'Review imported recipe' : 'New recipe');
+  var html = '<div class="modal-head"><div class="modal-title">'+titleText+'</div><button class="modal-close" id="modal-close-btn">&times;</button></div>'+
+    (isImported ? '<div class="section-sub" style="margin:-8px 0 16px;">Pulled from the photo automatically — check everything (especially quantities and macros) before saving.</div>' : '')+
     '<div class="form-row"><label>Name</label><input type="text" id="f-name" value="'+escapeAttr(r.name)+'"></div>'+
     '<div class="two-col">'+
       '<div class="form-row"><label>Meal type</label><select id="f-mealtype">'+mealOpts+'</select></div>'+
@@ -1653,7 +1680,7 @@ function openRecipeForm(existing){
       steps: steps
     };
 
-    if(existing){
+    if(isEditingRecipe){
       state.recipes = state.recipes.map(function(x){ return x.id===r.id ? updated : x; });
     } else {
       state.recipes.push(updated);
@@ -1677,24 +1704,31 @@ function addIngredientsToItems(items, ingredients){
 
 function renderGrocery(){
   var items = {};
+  var customCounts = {};
   Object.keys(state.plan).forEach(function(k){
     var entry = state.plan[k];
     if(!entry) return;
     Object.keys(entry).forEach(function(personId){
       var pe = entry[personId];
-      if(!pe || pe.type !== 'recipe') return;
-      var r = findRecipe(pe.recipeId);
-      if(!r) return;
-      addIngredientsToItems(items, r.ingredients);
+      if(!pe) return;
+      if(pe.type === 'recipe'){
+        var r = findRecipe(pe.recipeId);
+        if(r) addIngredientsToItems(items, r.ingredients);
+      } else if(pe.type === 'custom' && pe.title && pe.title.trim()){
+        var titleKey = pe.title.trim().toLowerCase();
+        if(!customCounts[titleKey]) customCounts[titleKey] = { title: pe.title.trim(), count: 0 };
+        customCounts[titleKey].count++;
+      }
     });
   });
 
   var byCat = {};
   CATS.forEach(function(c){ byCat[c] = []; });
   Object.keys(items).forEach(function(k){ byCat[items[k].cat].push(items[k]); });
+  var customList = Object.keys(customCounts).map(function(k){ return customCounts[k]; }).sort(function(a,b){ return a.title.localeCompare(b.title); });
 
   var container = document.getElementById('grocery-container');
-  var anyItems = Object.keys(items).length > 0;
+  var anyItems = Object.keys(items).length > 0 || customList.length > 0;
   if(!anyItems){
     container.innerHTML = '<div class="empty-state">Nothing planned yet this week. Add meals in the Planner tab and your grocery list builds itself.</div>';
     return;
@@ -1715,6 +1749,19 @@ function renderGrocery(){
     });
     html += '</div>';
   });
+  if(customList.length > 0){
+    html += '<div class="grocery-section"><h3>Other (typed-in meals)</h3>';
+    customList.forEach(function(it){
+      var itemKey = ('other|'+it.title).toLowerCase();
+      var checked = state.groceryChecked[itemKey] ? 'checked' : '';
+      var qtyDisplay = it.count > 1 ? ('x'+it.count+' this week') : '';
+      html += '<div class="grocery-item'+(checked?' checked':'')+'" data-key="'+itemKey+'">'+
+        '<input type="checkbox" '+checked+' data-item-key="'+itemKey+'">'+
+        '<div><div class="g-name">'+escapeHtml(it.title)+'</div><div class="g-qty">'+escapeHtml(qtyDisplay)+'</div></div>'+
+        '</div>';
+    });
+    html += '</div>';
+  }
   html += '</div>';
   container.innerHTML = html;
 
@@ -1977,6 +2024,51 @@ function setupHeaderActions(){
   document.getElementById('view-week-btn').addEventListener('click', function(){ setPlannerViewMode('week'); });
   document.getElementById('start-week-btn').addEventListener('click', startNextWeek);
   document.getElementById('new-recipe-btn').addEventListener('click', function(){ openRecipeForm(null); });
+  document.getElementById('import-recipe-btn').addEventListener('click', function(){
+    document.getElementById('import-recipe-input').click();
+  });
+  document.getElementById('import-recipe-input').addEventListener('change', async function(e){
+    var file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+    if(!file.type || file.type.indexOf('image/') !== 0){ alert('Please choose an image file.'); return; }
+    var btn = document.getElementById('import-recipe-btn');
+    var originalText = btn.textContent;
+    btn.textContent = 'Reading recipe…';
+    btn.disabled = true;
+    try{
+      var base64 = await new Promise(function(resolve, reject){
+        var reader = new FileReader();
+        reader.onload = function(){ resolve(reader.result.split(',')[1]); };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      var resp = await fetch('/api/extract-recipe', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ imageBase64: base64, mediaType: file.type })
+      });
+      var data = await resp.json();
+      if(!resp.ok || data.error){
+        alert('Could not read that recipe: ' + (data.error || ('HTTP '+resp.status)));
+        return;
+      }
+      data.id = uid('r');
+      if(!data.contains) data.contains = [];
+      if(!data.ingredients) data.ingredients = [];
+      if(!data.steps) data.steps = [];
+      if(!data.nutrition) data.nutrition = {cal:0,protein:0,carbs:0,fat:0,fiber:0};
+      if(!MEAL_TYPES.includes(data.mealType)) data.mealType = 'dinner';
+      if(!DIET_LABEL[data.dietType]) data.dietType = 'omnivore';
+      openRecipeForm(data, true);
+    }catch(err){
+      console.error(err);
+      alert('Something went wrong reading that photo. Try again, or enter the recipe manually.');
+    }finally{
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  });
   document.getElementById('recipe-search').addEventListener('input', function(){
     searchTerm = this.value; renderRecipes();
   });
