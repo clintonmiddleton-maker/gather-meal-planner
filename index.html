@@ -362,6 +362,10 @@ select{
   .brand-name{font-size:32px;}
   .modal-overlay{padding:16px 10px;}
   .modal{padding:20px 18px 22px;}
+  .tab-bar{overflow-x:visible;}
+  .tab{flex:1 1 0;padding:11px 4px;text-align:center;}
+  .tab .tab-label{display:none;}
+  .tab .tab-icon{font-size:19px;}
 }
 </style>
 </head>
@@ -387,11 +391,11 @@ select{
   </div>
 
   <div class="tab-bar" role="tablist">
-    <button class="tab active" data-view="planner" role="tab">📅 Planner</button>
-    <button class="tab" data-view="recipes" role="tab">📖 Recipes</button>
-    <button class="tab" data-view="grocery" role="tab">🛒 Grocery</button>
-    <button class="tab" data-view="lunchbox" role="tab">🍱 Lunchbox</button>
-    <button class="tab" data-view="family" role="tab">👪 Family</button>
+    <button class="tab active" data-view="planner" role="tab"><span class="tab-icon">📅</span><span class="tab-label"> Planner</span></button>
+    <button class="tab" data-view="recipes" role="tab"><span class="tab-icon">📖</span><span class="tab-label"> Recipes</span></button>
+    <button class="tab" data-view="grocery" role="tab"><span class="tab-icon">🛒</span><span class="tab-label"> Grocery</span></button>
+    <button class="tab" data-view="lunchbox" role="tab"><span class="tab-icon">🍱</span><span class="tab-label"> Lunchbox</span></button>
+    <button class="tab" data-view="family" role="tab"><span class="tab-icon">👪</span><span class="tab-label"> Family</span></button>
   </div>
 
   <!-- PLANNER -->
