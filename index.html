@@ -350,6 +350,20 @@ select{
 }
 .person-plan-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px;}
 
+/* ---------- Custom recipe search dropdown (replaces native <datalist>,
+   which iOS Safari doesn't reliably show) ---------- */
+.autocomplete-wrap{position:relative;}
+.autocomplete-list{
+  display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);
+  background:var(--card);border:1px solid var(--line-strong);border-radius:6px;
+  max-height:190px;overflow-y:auto;z-index:70;box-shadow:0 8px 20px rgba(42,36,32,0.18);
+}
+.autocomplete-list.open{display:block;}
+.autocomplete-item{padding:9px 12px;font-size:13.5px;cursor:pointer;border-bottom:1px solid var(--line);}
+.autocomplete-item:last-child{border-bottom:none;}
+.autocomplete-item:hover{background:var(--parchment-dim);}
+.autocomplete-empty{padding:9px 12px;font-size:12px;color:var(--ink-soft);font-style:italic;}
+
 @media (max-width:820px){
   .two-col{grid-template-columns:1fr;}
   .flex-row{flex-wrap:wrap;}
@@ -1507,7 +1521,6 @@ function openMealSlot(key){
   var allowedRecipes = state.recipes
     .filter(function(r){ return r.mealType.indexOf(recipeMealType) !== -1; })
     .sort(function(a,b){ return a.name.localeCompare(b.name); });
-  var datalistHtml = allowedRecipes.map(function(r){ return '<option value="'+escapeAttr(r.name)+'">'; }).join('');
 
   function currentValueFor(personId){
     var current = entry[personId];
@@ -1525,7 +1538,10 @@ function openMealSlot(key){
     }).join('')+'</div>' : '';
     return '<div class="person-plan-row">'+
       '<div class="person-plan-head"><span class="swatch" style="background:'+m.color+';width:24px;height:24px;font-size:10px;">'+escapeHtml(m.name.charAt(0))+'</span><strong>'+escapeHtml(m.name)+'</strong></div>'+
-      '<input type="text" class="person-custom-input" id="input-'+m.id+'" data-person="'+m.id+'" list="recipe-datalist" autocomplete="off" placeholder="Type to search '+MEAL_SLOT_LABEL[slotKey].toLowerCase()+' recipes, or enter something custom" value="'+escapeAttr(currentValueFor(m.id))+'">'+
+      '<div class="autocomplete-wrap">'+
+        '<input type="text" class="person-custom-input" id="input-'+m.id+'" data-person="'+m.id+'" autocomplete="off" placeholder="Type to search '+MEAL_SLOT_LABEL[slotKey].toLowerCase()+' recipes, or enter something custom" value="'+escapeAttr(currentValueFor(m.id))+'">'+
+        '<div class="autocomplete-list" id="acdrop-'+m.id+'"></div>'+
+      '</div>'+
       chipsHtml+
     '</div>';
   }).join('');
@@ -1540,7 +1556,6 @@ function openMealSlot(key){
     emptyNote+
     '<div class="form-row" style="margin-bottom:16px;"><div class="flex-row"><select id="quick-apply-select" style="flex:1;">'+quickOptions+'</select><button class="btn btn-ghost btn-sm" id="quick-apply-btn" type="button">Apply to everyone</button></div></div>'+
     rowsHtml+
-    '<datalist id="recipe-datalist">'+datalistHtml+'</datalist>'+
     '<div class="modal-actions">'+
       '<button class="btn btn-ghost" id="slot-remove-btn" type="button">Clear everyone</button>'+
       '<button class="btn btn-ghost" id="modal-cancel-btn" type="button">Cancel</button>'+
@@ -1550,6 +1565,39 @@ function openMealSlot(key){
   openModal(html);
   document.getElementById('modal-close-btn').addEventListener('click', closeModal);
   document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
+
+  function showSuggestions(personId, filterText){
+    var dropdown = document.getElementById('acdrop-'+personId);
+    if(!dropdown) return;
+    var q = (filterText || '').trim().toLowerCase();
+    var matches = allowedRecipes.filter(function(r){ return !q || r.name.toLowerCase().indexOf(q) !== -1; });
+    if(matches.length === 0){
+      dropdown.innerHTML = '<div class="autocomplete-empty">No matching recipes — this will save as a custom meal.</div>';
+    } else {
+      dropdown.innerHTML = matches.slice(0, 20).map(function(r){
+        return '<div class="autocomplete-item" data-name="'+escapeAttr(r.name)+'">'+escapeHtml(r.name)+'</div>';
+      }).join('');
+      Array.prototype.forEach.call(dropdown.querySelectorAll('.autocomplete-item'), function(item){
+        item.addEventListener('click', function(){
+          document.getElementById('input-'+personId).value = item.getAttribute('data-name');
+          dropdown.classList.remove('open');
+        });
+      });
+    }
+    dropdown.classList.add('open');
+  }
+
+  state.family.forEach(function(m){
+    var input = document.getElementById('input-'+m.id);
+    input.addEventListener('focus', function(){ showSuggestions(m.id, input.value); });
+    input.addEventListener('input', function(){ showSuggestions(m.id, input.value); });
+    input.addEventListener('blur', function(){
+      setTimeout(function(){
+        var dropdown = document.getElementById('acdrop-'+m.id);
+        if(dropdown) dropdown.classList.remove('open');
+      }, 200);
+    });
+  });
 
   document.getElementById('quick-apply-btn').addEventListener('click', function(){
     var name = document.getElementById('quick-apply-select').value;
