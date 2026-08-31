@@ -2171,6 +2171,27 @@ function setupHeaderActions(){
   document.getElementById('import-recipe-btn').addEventListener('click', function(){
     document.getElementById('import-recipe-input').click();
   });
+  function resizeImageForUpload(file, maxDimension, quality){
+    return new Promise(function(resolve, reject){
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function(){
+        URL.revokeObjectURL(url);
+        var scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+        var targetW = Math.max(1, Math.round(img.width * scale));
+        var targetH = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = targetW; canvas.height = targetH;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        var dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve({ imageBase64: dataUrl.split(',')[1], mediaType: 'image/jpeg' });
+      };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error('Could not read that image file.')); };
+      img.src = url;
+    });
+  }
+
   document.getElementById('import-recipe-input').addEventListener('change', async function(e){
     var files = Array.prototype.slice.call(e.target.files || []);
     e.target.value = '';
@@ -2183,20 +2204,24 @@ function setupHeaderActions(){
     btn.textContent = files.length > 1 ? 'Reading '+files.length+' photos\u2026' : 'Reading recipe\u2026';
     btn.disabled = true;
     try{
+      // Shrink each photo before sending — a full-resolution phone photo
+      // (often several MB) can push a multi-photo upload over what the
+      // server will accept, and a vision model reads a ~1600px image
+      // just as well as the original anyway.
       var images = await Promise.all(files.map(function(file){
-        return new Promise(function(resolve, reject){
-          var reader = new FileReader();
-          reader.onload = function(){ resolve({ imageBase64: reader.result.split(',')[1], mediaType: file.type }); };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+        return resizeImageForUpload(file, 1600, 0.82);
       }));
       var resp = await fetch('/api/extract-recipe', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ images: images })
       });
-      var data = await resp.json();
+      var data;
+      try{
+        data = await resp.json();
+      }catch(parseErr){
+        throw new Error('The server sent back something unexpected (HTTP '+resp.status+'). If this keeps happening, try fewer photos at once.');
+      }
       if(!resp.ok || data.error){
         alert('Could not read that recipe: ' + (data.error || ('HTTP '+resp.status)));
         return;
@@ -2213,7 +2238,7 @@ function setupHeaderActions(){
       openRecipeForm(data, true);
     }catch(err){
       console.error(err);
-      alert('Something went wrong reading those photos. Try again, or enter the recipe manually.');
+      alert((err && err.message) ? err.message : 'Something went wrong reading those photos. Try again, or enter the recipe manually.');
     }finally{
       btn.textContent = originalText;
       btn.disabled = false;
