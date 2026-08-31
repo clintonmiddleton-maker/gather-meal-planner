@@ -1,21 +1,26 @@
 import type { Context, Config } from "@netlify/functions";
 
-// Reads a photo of a recipe card and turns it into Gather's recipe
-// format, using the Anthropic API — the same Claude models this app was
-// built with. Needs ANTHROPIC_API_KEY set in Netlify's environment
-// variables (get one at console.anthropic.com — a separate account/key
-// from a claude.ai login, billed per use, but this is a tiny amount of
-// usage per recipe).
+// Reads one or more photos of a recipe — usually one, but a recipe that
+// spans multiple pages (ingredients on one page, method on another) can
+// be sent as several photos together, treated as one recipe. Uses the
+// Anthropic API — the same Claude models this app was built with. Needs
+// ANTHROPIC_API_KEY set in Netlify's environment variables (get one at
+// console.anthropic.com — a separate account/key from a claude.ai login,
+// billed per use, but this is a tiny amount of usage per recipe).
 //
 // This only ever returns extracted data for the client to show in the
 // review form — nothing is saved until the person confirms it there.
 
-const EXTRACTION_PROMPT = `You are extracting a recipe from a photo of a printed recipe card into a strict JSON schema for a meal-planning app. Output ONLY valid JSON — no markdown code fences, no commentary before or after.
+const MAX_IMAGES = 6;
+
+const EXTRACTION_PROMPT = `You are extracting a recipe from one or more photos into a strict JSON schema for a meal-planning app. Output ONLY valid JSON — no markdown code fences, no commentary before or after.
+
+If more than one photo is given, they are all part of the SAME recipe — likely different pages or sections of it (e.g. ingredients on one page, method on another, or a nutrition panel on a third). Combine everything across all the photos into ONE recipe object, not one output per photo.
 
 Match this exact shape:
 {
   "name": string,
-  "mealType": one of "breakfast" | "lunch" | "dinner" | "snack" | "treat",
+  "mealType": array of one or more from "breakfast" | "lunch" | "dinner" | "snack" | "treat" (most recipes need just one; only include more than one if the dish genuinely suits either, e.g. a dish that works equally as lunch or dinner),
   "dietType": one of "vegan" | "vegetarian" | "pescatarian" | "omnivore" (choose the strictest that applies — e.g. no meat/fish/dairy/egg = vegan),
   "contains": array drawn only from "dairy" | "gluten" | "nuts" | "egg" | "fish" | "spicy" — include any that visibly apply, omit ones that don't,
   "kidFriendly": boolean, your best judgement of whether this is a mild, kid-typical dish,
@@ -24,10 +29,15 @@ Match this exact shape:
   "cookMin": number (minutes),
   "nutrition": { "cal": number, "protein": number, "carbs": number, "fat": number, "fiber": number },
   "ingredients": array of { "name": string, "qty": string, "unit": string, "cat": one of "produce" | "protein" | "dairy" | "pantry" },
-  "steps": array of strings, each one method step, rewritten in your own words rather than copied verbatim from the card
+  "steps": array of strings, each one method step, rewritten in your own words rather than copied verbatim from the source
 }
 
-If a field isn't visible on the card (e.g. fiber isn't listed), give your best reasonable estimate rather than leaving it blank or zero. Keep ingredient names and quantities as close to the card as you can read them.`;
+If a field isn't visible anywhere across the photos (e.g. fiber isn't listed), give your best reasonable estimate rather than leaving it blank or zero. Keep ingredient names and quantities as close to the source as you can read them.`;
+
+interface ImageInput {
+  imageBase64: string;
+  mediaType: string;
+}
 
 export default async (req: Request, context: Context) => {
   if (req.method !== "POST") {
@@ -42,7 +52,7 @@ export default async (req: Request, context: Context) => {
     );
   }
 
-  let body: { imageBase64?: string; mediaType?: string };
+  let body: { images?: ImageInput[] };
   try {
     body = await req.json();
   } catch {
@@ -52,12 +62,31 @@ export default async (req: Request, context: Context) => {
     });
   }
 
-  if (!body.imageBase64 || !body.mediaType) {
+  const images = body.images || [];
+  if (images.length === 0) {
     return new Response(JSON.stringify({ error: "Missing image data." }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
   }
+  if (images.length > MAX_IMAGES) {
+    return new Response(JSON.stringify({ error: `Please send ${MAX_IMAGES} photos or fewer at a time.` }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const invalidImage = images.find((img) => !img.imageBase64 || !img.mediaType);
+  if (invalidImage) {
+    return new Response(JSON.stringify({ error: "One of the images is missing data." }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const imageBlocks = images.map((img) => ({
+    type: "image",
+    source: { type: "base64", media_type: img.mediaType, data: img.imageBase64 },
+  }));
 
   let anthropicRes: Response;
   try {
@@ -74,10 +103,7 @@ export default async (req: Request, context: Context) => {
         messages: [
           {
             role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: body.mediaType, data: body.imageBase64 } },
-              { type: "text", text: EXTRACTION_PROMPT },
-            ],
+            content: [...imageBlocks, { type: "text", text: EXTRACTION_PROMPT }],
           },
         ],
       }),
@@ -111,7 +137,7 @@ export default async (req: Request, context: Context) => {
     parsed = JSON.parse(cleaned);
   } catch {
     return new Response(
-      JSON.stringify({ error: "Couldn't read a valid recipe from that photo. Try a clearer image, or enter it manually." }),
+      JSON.stringify({ error: "Couldn't read a valid recipe from those photos. Try clearer images, or enter it manually." }),
       { status: 422, headers: { "content-type": "application/json" } }
     );
   }
