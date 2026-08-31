@@ -387,11 +387,11 @@ select{
   </div>
 
   <div class="tab-bar" role="tablist">
-    <button class="tab active" data-view="planner" role="tab">Planner</button>
-    <button class="tab" data-view="recipes" role="tab">Recipes</button>
-    <button class="tab" data-view="grocery" role="tab">Grocery</button>
-    <button class="tab" data-view="family" role="tab">Family</button>
-    <button class="tab" data-view="lunchbox" role="tab">Lunchbox</button>
+    <button class="tab active" data-view="planner" role="tab">📅 Planner</button>
+    <button class="tab" data-view="recipes" role="tab">📖 Recipes</button>
+    <button class="tab" data-view="grocery" role="tab">🛒 Grocery</button>
+    <button class="tab" data-view="lunchbox" role="tab">🍱 Lunchbox</button>
+    <button class="tab" data-view="family" role="tab">👪 Family</button>
   </div>
 
   <!-- PLANNER -->
@@ -434,7 +434,7 @@ select{
   <div class="view" id="view-recipes">
     <div class="section-head">
       <div>
-        <div class="section-title">Recipe library</div>
+        <div class="section-title">📖 Recipe library</div>
         <div class="section-sub">Filter by diet or meal type. Click a card for the full recipe.</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -455,7 +455,7 @@ select{
   <div class="view" id="view-grocery">
     <div class="section-head">
       <div>
-        <div class="section-title">Grocery list</div>
+        <div class="section-title">🛒 Grocery list</div>
         <div class="section-sub">Built from every meal on this week's planner, for everyone.</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -471,7 +471,7 @@ select{
   <div class="view" id="view-family">
     <div class="section-head">
       <div>
-        <div class="section-title">Family profiles</div>
+        <div class="section-title">👪 Family profiles</div>
         <div class="section-sub">This drives the matching and the calorie estimates elsewhere. Edit freely.</div>
       </div>
     </div>
@@ -482,7 +482,7 @@ select{
   <div class="view" id="view-lunchbox">
     <div class="section-head">
       <div>
-        <div class="section-title">Lunchbox helper</div>
+        <div class="section-title">🍱 Lunchbox helper</div>
         <div class="section-sub">Tap a favourite to set it — no need to open the planner. Add new ones as you find them.</div>
       </div>
     </div>
@@ -1364,7 +1364,7 @@ function updatePlannerControls(){
   document.getElementById('planner-week-view').classList.toggle('hidden', showDay);
 
   if(showDay){
-    document.getElementById('planner-title').textContent = dayViewSelectedDay;
+    document.getElementById('planner-title').textContent = '📅 '+dayViewSelectedDay;
     document.getElementById('planner-subtitle').textContent = 'Tap a meal to set what each person is having.';
   } else {
     var isTemplate = plannerMode === 'template';
@@ -1372,7 +1372,7 @@ function updatePlannerControls(){
     document.getElementById('mode-template-btn').classList.toggle('active', isTemplate);
     document.getElementById('start-week-btn').style.display = isTemplate ? 'none' : 'inline-flex';
     document.getElementById('clear-week-btn').textContent = isTemplate ? 'Clear usual template' : 'Clear this week';
-    document.getElementById('planner-title').textContent = isTemplate ? 'Your usual weekly plan' : 'This week';
+    document.getElementById('planner-title').textContent = '📅 '+(isTemplate ? 'Your usual weekly plan' : 'This week');
     document.getElementById('planner-subtitle').textContent = isTemplate
       ? "Editing your usual pattern — this won't touch the live week until you click Start next week."
       : 'Tap a meal to edit it.';
