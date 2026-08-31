@@ -391,6 +391,7 @@ select{
     <button class="tab" data-view="recipes" role="tab">Recipes</button>
     <button class="tab" data-view="grocery" role="tab">Grocery</button>
     <button class="tab" data-view="family" role="tab">Family</button>
+    <button class="tab" data-view="lunchbox" role="tab">Lunchbox</button>
   </div>
 
   <!-- PLANNER -->
@@ -475,6 +476,19 @@ select{
       </div>
     </div>
     <div class="family-grid" id="family-grid"></div>
+  </div>
+
+  <!-- LUNCHBOX -->
+  <div class="view" id="view-lunchbox">
+    <div class="section-head">
+      <div>
+        <div class="section-title">Lunchbox helper</div>
+        <div class="section-sub">Tap a favourite to set it — no need to open the planner. Add new ones as you find them.</div>
+      </div>
+    </div>
+    <div class="day-pills" id="lunchbox-day-pills"></div>
+    <div id="lunchbox-people"></div>
+    <div id="lunchbox-kitchen"></div>
   </div>
 </div>
 
@@ -1931,6 +1945,111 @@ function renderFamily(){
   });
 }
 
+/* ============================================================
+   RENDER: LUNCHBOX HELPER
+   ============================================================ */
+var lunchboxSelectedDay = (function(){
+  var weekdayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var today = weekdayNames[new Date().getDay()];
+  return DAYS.indexOf(today) !== -1 ? today : 'Mon';
+})();
+
+function renderLunchbox(){
+  var pillsContainer = document.getElementById('lunchbox-day-pills');
+  if(!pillsContainer) return;
+
+  pillsContainer.innerHTML = DAYS.map(function(day){
+    return '<div class="day-pill'+(day===lunchboxSelectedDay?' active':'')+'" data-day="'+day+'">'+day+'</div>';
+  }).join('');
+  Array.prototype.forEach.call(pillsContainer.querySelectorAll('.day-pill'), function(pill){
+    pill.addEventListener('click', function(){
+      lunchboxSelectedDay = pill.getAttribute('data-day');
+      renderLunchbox();
+    });
+  });
+
+  var peopleWithFavourites = state.family.filter(function(m){ return m.lunchSuggestions && m.lunchSuggestions.length > 0; });
+  var peopleContainer = document.getElementById('lunchbox-people');
+  var key = lunchboxSelectedDay+'-lunch';
+
+  if(peopleWithFavourites.length === 0){
+    peopleContainer.innerHTML = '<div class="empty-state">No favourites saved yet. Add one for someone in the Family tab, or save one below once you\u2019ve set a lunch.</div>';
+  } else {
+    peopleContainer.innerHTML = peopleWithFavourites.map(function(m){
+      var entry = (state.plan[key] || {})[m.id];
+      var currentLabel = 'Nothing set yet';
+      if(entry){
+        if(entry.type === 'recipe'){
+          var r = findRecipe(entry.recipeId);
+          currentLabel = r ? r.name : '(recipe removed)';
+        } else {
+          currentLabel = entry.title;
+        }
+      }
+      var chipsHtml = m.lunchSuggestions.map(function(s){
+        return '<div class="quick-chip" data-person="'+m.id+'" data-fill="'+escapeAttr(s)+'">'+escapeHtml(s)+'</div>';
+      }).join('');
+      return '<div class="family-card" data-person="'+m.id+'">'+
+        '<div class="family-card-head"><span class="swatch" style="background:'+m.color+';">'+escapeHtml(m.name.charAt(0).toUpperCase())+'</span><span class="family-card-name">'+escapeHtml(m.name)+'</span></div>'+
+        '<div class="family-detail-row"><strong>'+lunchboxSelectedDay+':</strong> '+escapeHtml(currentLabel)+'</div>'+
+        '<div class="chip-row" style="margin-top:10px;">'+chipsHtml+'</div>'+
+        '<div class="flex-row" style="margin-top:12px;"><input type="text" class="person-custom-input" id="newfav-'+m.id+'" placeholder="Add a new favourite\u2026" style="flex:1;"><button class="btn btn-ghost btn-sm" data-addfav="'+m.id+'" type="button">Save</button></div>'+
+      '</div>';
+    }).join('');
+  }
+
+  Array.prototype.forEach.call(peopleContainer.querySelectorAll('.quick-chip'), function(chip){
+    chip.addEventListener('click', function(){
+      var personId = chip.getAttribute('data-person');
+      var fill = chip.getAttribute('data-fill');
+      if(!state.plan[key]) state.plan[key] = {};
+      state.plan[key][personId] = { type:'custom', title: fill };
+      saveState();
+      renderLunchbox();
+      renderPlanner();
+      renderGrocery();
+    });
+  });
+
+  Array.prototype.forEach.call(peopleContainer.querySelectorAll('[data-addfav]'), function(btn){
+    btn.addEventListener('click', function(){
+      var personId = btn.getAttribute('data-addfav');
+      var input = document.getElementById('newfav-'+personId);
+      var val = input.value.trim();
+      if(!val) return;
+      var m = findMember(personId);
+      if(m.lunchSuggestions.indexOf(val) === -1){
+        m.lunchSuggestions.push(val);
+        saveState();
+      }
+      renderLunchbox();
+    });
+  });
+
+  var kitchenContainer = document.getElementById('lunchbox-kitchen');
+  var items = {};
+  Object.keys(state.plan).forEach(function(k){
+    var entry = state.plan[k];
+    if(!entry) return;
+    Object.keys(entry).forEach(function(personId){
+      var pe = entry[personId];
+      if(pe && pe.type === 'recipe'){
+        var r = findRecipe(pe.recipeId);
+        if(r) addIngredientsToItems(items, r.ingredients);
+      }
+    });
+  });
+  var lunchboxCats = ['produce','protein','dairy'];
+  var names = [];
+  Object.keys(items).forEach(function(k){
+    if(lunchboxCats.indexOf(items[k].cat) !== -1) names.push(items[k].name);
+  });
+  names = names.filter(function(n, i){ return names.indexOf(n) === i; }).sort(function(a,b){ return a.localeCompare(b); });
+  kitchenContainer.innerHTML = names.length > 0
+    ? '<div class="section-sub" style="margin:20px 0 8px;">This week\u2019s kitchen, for inspiration:</div><div class="chip-row">'+names.map(function(n){ return '<span class="tag-pill">'+escapeHtml(n)+'</span>'; }).join('')+'</div>'
+    : '';
+}
+
 function openFamilyForm(m){
   var dietOpts = Object.keys(DIET_LABEL).map(function(d){ return '<option value="'+d+'"'+(m.dietType===d?' selected':'')+'>'+DIET_LABEL[d]+'</option>'; }).join('');
   var avoidChecks = AVOID_TAGS.map(function(t){
@@ -2299,6 +2418,7 @@ function renderAll(){
   renderRecipes();
   renderGrocery();
   renderFamily();
+  renderLunchbox();
   document.getElementById('week-label').value = state.weekLabel || '';
 }
 
