@@ -1805,13 +1805,14 @@ function openRecipeForm(existing, isImported){
 /* ============================================================
    RENDER: GROCERY
    ============================================================ */
-function addIngredientsToItems(items, ingredients){
+function addIngredientsToItems(items, ingredients, multiplier){
+  multiplier = multiplier || 1;
   ingredients.forEach(function(ing){
     var key = ing.name.toLowerCase()+'|'+ing.unit.toLowerCase();
     if(!items[key]) items[key] = { name:ing.name, unit:ing.unit, cat: (CATS.indexOf(ing.cat)!==-1?ing.cat:'pantry'), total:0, hasNumeric:true, freeform:[] };
     var n = parseFloat(ing.qty);
     if(isNaN(n)){ items[key].hasNumeric=false; items[key].freeform.push(ing.qty+' '+ing.unit); }
-    else { items[key].total += n; }
+    else { items[key].total += n * multiplier; }
   });
 }
 
@@ -1821,17 +1822,27 @@ function renderGrocery(){
   Object.keys(state.plan).forEach(function(k){
     var entry = state.plan[k];
     if(!entry) return;
+    // Group by recipe first, so a meal assigned to several people is only
+    // shopped for once — scaled to how many people are actually eating it,
+    // not the recipe's own default serving count.
+    var recipeCounts = {};
     Object.keys(entry).forEach(function(personId){
       var pe = entry[personId];
       if(!pe) return;
       if(pe.type === 'recipe'){
-        var r = findRecipe(pe.recipeId);
-        if(r) addIngredientsToItems(items, r.ingredients);
+        recipeCounts[pe.recipeId] = (recipeCounts[pe.recipeId] || 0) + 1;
       } else if(pe.type === 'custom' && pe.title && pe.title.trim()){
         var titleKey = pe.title.trim().toLowerCase();
         if(!customCounts[titleKey]) customCounts[titleKey] = { title: pe.title.trim(), count: 0 };
         customCounts[titleKey].count++;
       }
+    });
+    Object.keys(recipeCounts).forEach(function(recipeId){
+      var r = findRecipe(recipeId);
+      if(!r) return;
+      var peopleEating = recipeCounts[recipeId];
+      var multiplier = r.servings > 0 ? (peopleEating / r.servings) : 1;
+      addIngredientsToItems(items, r.ingredients, multiplier);
     });
   });
 
@@ -1853,7 +1864,8 @@ function renderGrocery(){
     html += '<div class="grocery-section"><h3>'+CAT_LABEL[cat]+'</h3>';
     byCat[cat].sort(function(a,b){ return a.name.localeCompare(b.name); }).forEach(function(it){
       var itemKey = (cat+'|'+it.name+'|'+it.unit).toLowerCase();
-      var qtyDisplay = it.hasNumeric ? (it.total + (it.unit?' '+it.unit:'')) : it.freeform.join(' + ');
+      var roundedTotal = Math.round(it.total * 100) / 100;
+      var qtyDisplay = it.hasNumeric ? (roundedTotal + (it.unit?' '+it.unit:'')) : it.freeform.join(' + ');
       var checked = state.groceryChecked[itemKey] ? 'checked' : '';
       html += '<div class="grocery-item'+(checked?' checked':'')+'" data-key="'+itemKey+'">'+
         '<input type="checkbox" '+checked+' data-item-key="'+itemKey+'">'+
