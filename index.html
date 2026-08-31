@@ -437,8 +437,8 @@ select{
         <div class="section-sub">Filter by diet or meal type. Click a card for the full recipe.</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-ghost" id="import-recipe-btn" type="button">📷 Import from photo</button>
-        <input type="file" id="import-recipe-input" accept="image/*" style="display:none;">
+        <button class="btn btn-ghost" id="import-recipe-btn" type="button">📷 Import from photo(s)</button>
+        <input type="file" id="import-recipe-input" accept="image/*" multiple style="display:none;">
         <button class="btn btn-rust" id="new-recipe-btn" type="button">+ New recipe</button>
       </div>
     </div>
@@ -457,8 +457,12 @@ select{
         <div class="section-title">Grocery list</div>
         <div class="section-sub">Built from every meal on this week's planner, for everyone.</div>
       </div>
-      <button class="btn btn-ghost" id="clear-checked-btn" type="button">Uncheck all</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="sync-bring-btn" type="button">🔄 Sync to Bring now</button>
+        <button class="btn btn-ghost" id="clear-checked-btn" type="button">Uncheck all</button>
+      </div>
     </div>
+    <div id="sync-bring-status" class="section-sub" style="margin:-10px 0 14px;display:none;"></div>
     <div id="grocery-container"></div>
   </div>
 
@@ -567,7 +571,7 @@ function defaultState(){
 
 function seedRecipes(){
   return [
-    { id:'r1', name:'Sheet-Pan Lemon Herb Chicken & Veg', mealType:'dinner', dietType:'omnivore', contains:[], kidFriendly:true,
+    { id:'r1', name:'Sheet-Pan Lemon Herb Chicken & Veg', mealType:['dinner'], dietType:'omnivore', contains:[], kidFriendly:true,
       servings:4, prepMin:15, cookMin:35, nutrition:{cal:420,protein:38,carbs:22,fat:19,fiber:4},
       ingredients:[
         {name:'Chicken thighs',qty:'800',unit:'g',cat:'protein'},
@@ -585,7 +589,7 @@ function seedRecipes(){
         'Squeeze lemon over everything just before serving.'
       ]
     },
-    { id:'r2', name:'Coconut Chickpea & Spinach Curry (Mild)', mealType:'dinner', dietType:'vegan', contains:[], kidFriendly:true,
+    { id:'r2', name:'Coconut Chickpea & Spinach Curry (Mild)', mealType:['dinner'], dietType:'vegan', contains:[], kidFriendly:true,
       servings:4, prepMin:10, cookMin:25, nutrition:{cal:340,protein:12,carbs:38,fat:16,fiber:9},
       ingredients:[
         {name:'Chickpeas (canned)',qty:'2',unit:'cans',cat:'pantry'},
@@ -604,7 +608,7 @@ function seedRecipes(){
         'Stir in spinach until wilted. Serve over rice.'
       ]
     },
-    { id:'r3', name:'Beef & Black Bean Tacos (Mild)', mealType:'dinner', dietType:'omnivore', contains:['gluten','dairy'], kidFriendly:true,
+    { id:'r3', name:'Beef & Black Bean Tacos (Mild)', mealType:['dinner'], dietType:'omnivore', contains:['gluten','dairy'], kidFriendly:true,
       servings:4, prepMin:15, cookMin:15, nutrition:{cal:480,protein:29,carbs:41,fat:22,fiber:7},
       ingredients:[
         {name:'Ground beef',qty:'500',unit:'g',cat:'protein'},
@@ -622,7 +626,7 @@ function seedRecipes(){
         'Warm tortillas. Set out beef mix, cheese, lettuce, tomato and sour cream for everyone to build their own.'
       ]
     },
-    { id:'r4', name:'Miso-Glazed Salmon with Rice', mealType:'dinner', dietType:'pescatarian', contains:['fish'], kidFriendly:false,
+    { id:'r4', name:'Miso-Glazed Salmon with Rice', mealType:['dinner'], dietType:'pescatarian', contains:['fish'], kidFriendly:false,
       servings:4, prepMin:10, cookMin:20, nutrition:{cal:410,protein:34,carbs:32,fat:16,fiber:2},
       ingredients:[
         {name:'Salmon fillets',qty:'4',unit:'x150g',cat:'protein'},
@@ -638,7 +642,7 @@ function seedRecipes(){
         'Steam broccolini. Serve salmon over rice with broccolini alongside.'
       ]
     },
-    { id:'r5', name:'Veggie & Halloumi Sheet-Pan Bake', mealType:'dinner', dietType:'vegetarian', contains:['dairy','gluten'], kidFriendly:true,
+    { id:'r5', name:'Veggie & Halloumi Sheet-Pan Bake', mealType:['dinner'], dietType:'vegetarian', contains:['dairy','gluten'], kidFriendly:true,
       servings:4, prepMin:15, cookMin:30, nutrition:{cal:390,protein:16,carbs:28,fat:24,fiber:6},
       ingredients:[
         {name:'Halloumi',qty:'250',unit:'g',cat:'dairy'},
@@ -655,7 +659,7 @@ function seedRecipes(){
         'Prepare couscous per packet instructions. Serve vegetables and halloumi over couscous.'
       ]
     },
-    { id:'r6', name:'Overnight Oats with Berries', mealType:'breakfast', dietType:'vegan', contains:[], kidFriendly:true,
+    { id:'r6', name:'Overnight Oats with Berries', mealType:['breakfast'], dietType:'vegan', contains:[], kidFriendly:true,
       servings:4, prepMin:10, cookMin:0, nutrition:{cal:310,protein:9,carbs:52,fat:8,fiber:8},
       ingredients:[
         {name:'Rolled oats',qty:'240',unit:'g',cat:'pantry'},
@@ -670,7 +674,7 @@ function seedRecipes(){
         'Top with berries before serving.'
       ]
     },
-    { id:'r7', name:'Spinach & Feta Egg Muffins', mealType:'breakfast', dietType:'vegetarian', contains:['egg','dairy'], kidFriendly:true,
+    { id:'r7', name:'Spinach & Feta Egg Muffins', mealType:['breakfast'], dietType:'vegetarian', contains:['egg','dairy'], kidFriendly:true,
       servings:4, prepMin:10, cookMin:20, nutrition:{cal:180,protein:14,carbs:4,fat:12,fiber:1},
       ingredients:[
         {name:'Eggs',qty:'8',unit:'',cat:'protein'},
@@ -684,7 +688,7 @@ function seedRecipes(){
         'Pour egg over, bake at 180°C for 18-20 minutes until set.'
       ]
     },
-    { id:'r8', name:'Peanut Butter Banana Toast', mealType:'breakfast', dietType:'vegetarian', contains:['nuts','gluten'], kidFriendly:true,
+    { id:'r8', name:'Peanut Butter Banana Toast', mealType:['breakfast'], dietType:'vegetarian', contains:['nuts','gluten'], kidFriendly:true,
       servings:4, prepMin:5, cookMin:0, nutrition:{cal:340,protein:11,carbs:38,fat:16,fiber:5},
       ingredients:[
         {name:'Wholegrain bread',qty:'8',unit:'slices',cat:'pantry'},
@@ -697,7 +701,7 @@ function seedRecipes(){
         'Spread with peanut butter, top with sliced banana and a dusting of cinnamon.'
       ]
     },
-    { id:'r9', name:'Mediterranean Chickpea Salad', mealType:'lunch', dietType:'vegan', contains:['gluten'], kidFriendly:false,
+    { id:'r9', name:'Mediterranean Chickpea Salad', mealType:['lunch'], dietType:'vegan', contains:['gluten'], kidFriendly:false,
       servings:4, prepMin:15, cookMin:10, nutrition:{cal:360,protein:13,carbs:44,fat:15,fiber:9},
       ingredients:[
         {name:'Chickpeas (canned)',qty:'400',unit:'g',cat:'pantry'},
@@ -715,7 +719,7 @@ function seedRecipes(){
         'Combine everything with chickpeas, lemon juice and olive oil.'
       ]
     },
-    { id:'r10', name:'Turkey & Avocado Wrap', mealType:'lunch', dietType:'omnivore', contains:['gluten','dairy'], kidFriendly:true,
+    { id:'r10', name:'Turkey & Avocado Wrap', mealType:['lunch'], dietType:'omnivore', contains:['gluten','dairy'], kidFriendly:true,
       servings:4, prepMin:10, cookMin:0, nutrition:{cal:410,protein:26,carbs:34,fat:19,fiber:6},
       ingredients:[
         {name:'Sliced turkey breast',qty:'300',unit:'g',cat:'protein'},
@@ -732,7 +736,7 @@ function seedRecipes(){
         'Roll tightly and slice in half.'
       ]
     },
-    { id:'r11', name:'Roasted Veg & Quinoa Bowl', mealType:'lunch', dietType:'vegan', contains:[], kidFriendly:false,
+    { id:'r11', name:'Roasted Veg & Quinoa Bowl', mealType:['lunch'], dietType:'vegan', contains:[], kidFriendly:false,
       servings:4, prepMin:15, cookMin:30, nutrition:{cal:380,protein:11,carbs:46,fat:16,fiber:9},
       ingredients:[
         {name:'Quinoa',qty:'250',unit:'g',cat:'pantry'},
@@ -750,7 +754,7 @@ function seedRecipes(){
         'Assemble bowls with quinoa, roasted veg, chickpeas and dressing.'
       ]
     },
-    { id:'r12', name:'Apple Slices with Almond Butter', mealType:'snack', dietType:'vegan', contains:['nuts'], kidFriendly:true,
+    { id:'r12', name:'Apple Slices with Almond Butter', mealType:['snack'], dietType:'vegan', contains:['nuts'], kidFriendly:true,
       servings:4, prepMin:5, cookMin:0, nutrition:{cal:190,protein:5,carbs:22,fat:10,fiber:4},
       ingredients:[
         {name:'Apples',qty:'4',unit:'',cat:'produce'},
@@ -762,7 +766,7 @@ function seedRecipes(){
         'Serve with almond butter for dipping and a dusting of cinnamon.'
       ]
     },
-    { id:'r13', name:'Mac & Cheese with Broccoli', mealType:'dinner', dietType:'vegetarian', contains:['dairy','gluten'], kidFriendly:true,
+    { id:'r13', name:'Mac & Cheese with Broccoli', mealType:['dinner'], dietType:'vegetarian', contains:['dairy','gluten'], kidFriendly:true,
       servings:4, prepMin:10, cookMin:20, nutrition:{cal:430,protein:16,carbs:50,fat:18,fiber:4},
       ingredients:[
         {name:'Macaroni pasta',qty:'350',unit:'g',cat:'pantry'},
@@ -779,7 +783,7 @@ function seedRecipes(){
         'Combine sauce with pasta and broccoli, top with remaining cheese to serve.'
       ]
     },
-    { id:'r14', name:'Air-Fryer Chicken Nuggets, Chips & Broccoli', mealType:'dinner', dietType:'omnivore', contains:['gluten'], kidFriendly:true,
+    { id:'r14', name:'Air-Fryer Chicken Nuggets, Chips & Broccoli', mealType:['dinner'], dietType:'omnivore', contains:['gluten'], kidFriendly:true,
       servings:4, prepMin:10, cookMin:20, nutrition:{cal:460,protein:27,carbs:38,fat:22,fiber:4},
       ingredients:[
         {name:'Chicken breast, cut into nugget pieces',qty:'500',unit:'g',cat:'protein'},
@@ -795,7 +799,7 @@ function seedRecipes(){
         'Steam the broccoli. Serve everything together.'
       ]
     },
-    { id:'r15', name:'Bulgur Wheat & Grilled Chicken Bowl (High Protein)', mealType:'dinner', dietType:'omnivore', contains:['gluten'], kidFriendly:true,
+    { id:'r15', name:'Bulgur Wheat & Grilled Chicken Bowl (High Protein)', mealType:['dinner'], dietType:'omnivore', contains:['gluten'], kidFriendly:true,
       servings:4, prepMin:15, cookMin:20, nutrition:{cal:440,protein:42,carbs:36,fat:12,fiber:7},
       ingredients:[
         {name:'Chicken breast',qty:'600',unit:'g',cat:'protein'},
@@ -813,7 +817,7 @@ function seedRecipes(){
         'Top with sliced chicken to serve.'
       ]
     },
-    { id:'r16', name:'Pan-Seared Steak with Air-Fryer Chips', mealType:'dinner', dietType:'omnivore', contains:[], kidFriendly:true,
+    { id:'r16', name:'Pan-Seared Steak with Air-Fryer Chips', mealType:['dinner'], dietType:'omnivore', contains:[], kidFriendly:true,
       servings:4, prepMin:10, cookMin:20, nutrition:{cal:520,protein:36,carbs:34,fat:26,fiber:3},
       ingredients:[
         {name:'Steak (sirloin or rump)',qty:'4',unit:'x180g',cat:'protein'},
@@ -829,7 +833,7 @@ function seedRecipes(){
         'Rest steak for 5 minutes before slicing. Steam green beans. Serve together.'
       ]
     },
-    { id:'r17', name:'Fish Fingers with Chips & Peas', mealType:'dinner', dietType:'pescatarian', contains:['fish','gluten'], kidFriendly:true,
+    { id:'r17', name:'Fish Fingers with Chips & Peas', mealType:['dinner'], dietType:'pescatarian', contains:['fish','gluten'], kidFriendly:true,
       servings:4, prepMin:5, cookMin:20, nutrition:{cal:410,protein:24,carbs:42,fat:16,fiber:4},
       ingredients:[
         {name:'Fish fingers',qty:'16',unit:'',cat:'protein'},
@@ -843,7 +847,7 @@ function seedRecipes(){
         'Boil or steam peas. Serve everything together.'
       ]
     },
-    { id:'r18', name:'Grilled Chicken Garden Salad', mealType:'lunch', dietType:'omnivore', contains:[], kidFriendly:true,
+    { id:'r18', name:'Grilled Chicken Garden Salad', mealType:['lunch'], dietType:'omnivore', contains:[], kidFriendly:true,
       servings:4, prepMin:15, cookMin:10, nutrition:{cal:340,protein:32,carbs:14,fat:18,fiber:5},
       ingredients:[
         {name:'Chicken breast',qty:'500',unit:'g',cat:'protein'},
@@ -860,7 +864,7 @@ function seedRecipes(){
         'Top salad with sliced chicken to serve.'
       ]
     },
-    { id:'r19', name:'Chocolate Pudding Cups', mealType:'treat', dietType:'vegetarian', contains:['dairy'], kidFriendly:true,
+    { id:'r19', name:'Chocolate Pudding Cups', mealType:['treat'], dietType:'vegetarian', contains:['dairy'], kidFriendly:true,
       servings:4, prepMin:10, cookMin:5, nutrition:{cal:220,protein:5,carbs:30,fat:9,fiber:2},
       ingredients:[
         {name:'Milk',qty:'500',unit:'ml',cat:'dairy'},
@@ -874,7 +878,7 @@ function seedRecipes(){
         'Pour into cups and chill before serving as an occasional treat.'
       ]
     },
-    { id:'r20', name:'Frozen Yoghurt Berry Bark', mealType:'treat', dietType:'vegetarian', contains:['dairy'], kidFriendly:true,
+    { id:'r20', name:'Frozen Yoghurt Berry Bark', mealType:['treat'], dietType:'vegetarian', contains:['dairy'], kidFriendly:true,
       servings:4, prepMin:10, cookMin:0, nutrition:{cal:140,protein:5,carbs:18,fat:5,fiber:2},
       ingredients:[
         {name:'Plain or vanilla yoghurt',qty:'400',unit:'g',cat:'dairy'},
@@ -887,7 +891,7 @@ function seedRecipes(){
         'Freeze for at least 2 hours, then break into pieces as a treat.'
       ]
     },
-    { id:'r21', name:'Sesame Chicken Skewers with Green Beans', mealType:'dinner', dietType:'omnivore', contains:['gluten'], kidFriendly:true,
+    { id:'r21', name:'Sesame Chicken Skewers with Green Beans', mealType:['dinner'], dietType:'omnivore', contains:['gluten'], kidFriendly:true,
       servings:4, prepMin:70, cookMin:30, nutrition:{cal:410,protein:40,carbs:29,fat:16,fiber:5},
       ingredients:[
         {name:'Chicken breasts, cubed',qty:'450',unit:'g',cat:'protein'},
@@ -910,7 +914,7 @@ function seedRecipes(){
         'Heat olive oil in a pan, add green beans and remaining sesame seeds, and toast for a few minutes while stirring. Serve alongside the skewers.'
       ]
     },
-    { id:'r22', name:'Low-Fat Chicken Curry with Lentils', mealType:'dinner', dietType:'omnivore', contains:['dairy','spicy'], kidFriendly:false,
+    { id:'r22', name:'Low-Fat Chicken Curry with Lentils', mealType:['dinner'], dietType:'omnivore', contains:['dairy','spicy'], kidFriendly:false,
       servings:4, prepMin:20, cookMin:75, nutrition:{cal:380,protein:51,carbs:28,fat:6,fiber:8},
       ingredients:[
         {name:'Chicken breast, skinless',qty:'500',unit:'g',cat:'protein'},
@@ -934,7 +938,7 @@ function seedRecipes(){
         'Add the marinated chicken, yoghurt mix and lentils. Stir, cover, and cook for about 40 minutes.'
       ]
     },
-    { id:'r23', name:'Green Pepper & Mushroom Egg Muffins', mealType:'breakfast', dietType:'vegetarian', contains:['egg','dairy'], kidFriendly:true,
+    { id:'r23', name:'Green Pepper & Mushroom Egg Muffins', mealType:['breakfast'], dietType:'vegetarian', contains:['egg','dairy'], kidFriendly:true,
       servings:3, prepMin:10, cookMin:20, nutrition:{cal:190,protein:17,carbs:3,fat:11,fiber:1},
       ingredients:[
         {name:'Green pepper, finely chopped',qty:'0.5',unit:'',cat:'produce'},
@@ -950,7 +954,7 @@ function seedRecipes(){
         'Divide between muffin cups, top with cheese, and bake 20 minutes or until set.'
       ]
     },
-    { id:'r24', name:'Pancake Cheat', mealType:'breakfast', dietType:'vegetarian', contains:['egg','dairy'], kidFriendly:true,
+    { id:'r24', name:'Pancake Cheat', mealType:['breakfast'], dietType:'vegetarian', contains:['egg','dairy'], kidFriendly:true,
       servings:1, prepMin:5, cookMin:5, nutrition:{cal:115,protein:8,carbs:6,fat:5,fiber:2},
       ingredients:[
         {name:'Oat bran',qty:'1.5',unit:'tbsp',cat:'pantry'},
@@ -963,7 +967,7 @@ function seedRecipes(){
         'Pour in the batter (one large pancake or two small ones) and cook until browned on both sides.'
       ]
     },
-    { id:'r25', name:"Tina's Whey Shake, Banana & Peanut Butter", mealType:'breakfast', dietType:'vegetarian', contains:['dairy','nuts'], kidFriendly:false,
+    { id:'r25', name:"Tina's Whey Shake, Banana & Peanut Butter", mealType:['breakfast'], dietType:'vegetarian', contains:['dairy','nuts'], kidFriendly:false,
       servings:1, prepMin:5, cookMin:0, nutrition:{cal:260,protein:18,carbs:35,fat:6,fiber:3},
       ingredients:[
         {name:'Whey protein powder',qty:'0.5',unit:'scoop',cat:'pantry'},
@@ -973,7 +977,7 @@ function seedRecipes(){
       ],
       steps:['Blend whey, milk and banana until smooth.', 'Serve with the peanut butter stirred in or on the side.']
     },
-    { id:'r26', name:"Tina's Oats with Cinnamon & Almonds", mealType:'breakfast', dietType:'vegetarian', contains:['dairy','nuts'], kidFriendly:true,
+    { id:'r26', name:"Tina's Oats with Cinnamon & Almonds", mealType:['breakfast'], dietType:'vegetarian', contains:['dairy','nuts'], kidFriendly:true,
       servings:1, prepMin:5, cookMin:5, nutrition:{cal:240,protein:11,carbs:32,fat:8,fiber:4},
       ingredients:[
         {name:'Dry oats',qty:'3',unit:'tbsp',cat:'pantry'},
@@ -983,7 +987,7 @@ function seedRecipes(){
       ],
       steps:['Cook oats with milk and cinnamon.', 'Top with almonds to serve.']
     },
-    { id:'r27', name:"Tina's Strawberries & Yoghurt", mealType:'snack', dietType:'vegetarian', contains:['dairy'], kidFriendly:true,
+    { id:'r27', name:"Tina's Strawberries & Yoghurt", mealType:['snack'], dietType:'vegetarian', contains:['dairy'], kidFriendly:true,
       servings:1, prepMin:2, cookMin:0, nutrition:{cal:80,protein:6,carbs:11,fat:1,fiber:2},
       ingredients:[
         {name:'Strawberries',qty:'4',unit:'',cat:'produce'},
@@ -991,7 +995,7 @@ function seedRecipes(){
       ],
       steps:['Serve strawberries with yoghurt.']
     },
-    { id:'r28', name:"Tina's Peach & Biltong", mealType:'snack', dietType:'omnivore', contains:[], kidFriendly:true,
+    { id:'r28', name:"Tina's Peach & Biltong", mealType:['snack'], dietType:'omnivore', contains:[], kidFriendly:true,
       servings:1, prepMin:2, cookMin:0, nutrition:{cal:125,protein:13,carbs:16,fat:1,fiber:2},
       ingredients:[
         {name:'Peach',qty:'1',unit:'',cat:'produce'},
@@ -999,7 +1003,7 @@ function seedRecipes(){
       ],
       steps:['Serve peach alongside biltong.']
     },
-    { id:'r29', name:"Tina's Green Salad Wrap", mealType:'lunch', dietType:'vegetarian', contains:['gluten'], kidFriendly:true,
+    { id:'r29', name:"Tina's Green Salad Wrap", mealType:['lunch'], dietType:'vegetarian', contains:['gluten'], kidFriendly:true,
       servings:1, prepMin:8, cookMin:0, nutrition:{cal:175,protein:4,carbs:22,fat:7,fiber:3},
       ingredients:[
         {name:'Mixed salad leaves',qty:'1',unit:'cup',cat:'produce'},
@@ -1009,7 +1013,7 @@ function seedRecipes(){
       ],
       steps:['Dress the salad leaves with olive oil and balsamic.', 'Fill the wrap and roll.']
     },
-    { id:'r30', name:"Tina's Leftover Chicken & Couscous Salad", mealType:'lunch', dietType:'omnivore', contains:['gluten','egg'], kidFriendly:true,
+    { id:'r30', name:"Tina's Leftover Chicken & Couscous Salad", mealType:['lunch'], dietType:'omnivore', contains:['gluten','egg'], kidFriendly:true,
       servings:1, prepMin:8, cookMin:0, nutrition:{cal:165,protein:11,carbs:15,fat:4,fiber:2},
       ingredients:[
         {name:'Leftover cooked chicken',qty:'30',unit:'g',cat:'protein'},
@@ -1019,7 +1023,7 @@ function seedRecipes(){
       ],
       steps:['Toss all ingredients together and serve.']
     },
-    { id:'r31', name:"Tina's Apple & Whey", mealType:'snack', dietType:'vegetarian', contains:['dairy'], kidFriendly:false,
+    { id:'r31', name:"Tina's Apple & Whey", mealType:['snack'], dietType:'vegetarian', contains:['dairy'], kidFriendly:false,
       servings:1, prepMin:2, cookMin:0, nutrition:{cal:155,protein:12,carbs:26,fat:1,fiber:4},
       ingredients:[
         {name:'Apple',qty:'1',unit:'',cat:'produce'},
@@ -1027,7 +1031,7 @@ function seedRecipes(){
       ],
       steps:['Mix whey with water.', 'Serve with the apple.']
     },
-    { id:'r32', name:"Tina's Whey, Yoghurt & Berries", mealType:'snack', dietType:'vegetarian', contains:['dairy'], kidFriendly:false,
+    { id:'r32', name:"Tina's Whey, Yoghurt & Berries", mealType:['snack'], dietType:'vegetarian', contains:['dairy'], kidFriendly:false,
       servings:1, prepMin:2, cookMin:0, nutrition:{cal:230,protein:30,carbs:20,fat:2,fiber:3},
       ingredients:[
         {name:'Whey protein powder',qty:'1',unit:'scoop',cat:'pantry'},
@@ -1036,7 +1040,7 @@ function seedRecipes(){
       ],
       steps:['Mix whey into the yoghurt.', 'Top with berries.']
     },
-    { id:'r33', name:"Tina's Chicken Skewers, Veg & Brown Rice", mealType:'dinner', dietType:'omnivore', contains:['gluten'], kidFriendly:true,
+    { id:'r33', name:"Tina's Chicken Skewers, Veg & Brown Rice", mealType:['dinner'], dietType:'omnivore', contains:['gluten'], kidFriendly:true,
       servings:1, prepMin:5, cookMin:0, nutrition:{cal:370,protein:23,carbs:38,fat:13,fiber:4},
       ingredients:[
         {name:'Sesame chicken skewers, cooked',qty:'60',unit:'g',cat:'protein'},
@@ -1047,7 +1051,7 @@ function seedRecipes(){
       ],
       steps:['Plate the chicken skewer portion with carrots, broccoli and brown rice.', 'Drizzle with olive oil.']
     },
-    { id:'r34', name:"Tina's Spaghetti, Chickpeas & Stir-Fry Veg", mealType:'dinner', dietType:'vegetarian', contains:['gluten'], kidFriendly:true,
+    { id:'r34', name:"Tina's Spaghetti, Chickpeas & Stir-Fry Veg", mealType:['dinner'], dietType:'vegetarian', contains:['gluten'], kidFriendly:true,
       servings:1, prepMin:10, cookMin:10, nutrition:{cal:365,protein:11,carbs:54,fat:9,fiber:9},
       ingredients:[
         {name:'Spaghetti, cooked',qty:'0.5',unit:'cup',cat:'pantry'},
@@ -1058,7 +1062,7 @@ function seedRecipes(){
       ],
       steps:['Toss cooked spaghetti with chickpeas and stir-fried veg.', 'Serve with a side of green salad.']
     },
-    { id:'r35', name:'Curry & Chilli Fried Rice with Chicken', mealType:'dinner', dietType:'omnivore', contains:['spicy'], kidFriendly:false,
+    { id:'r35', name:'Curry & Chilli Fried Rice with Chicken', mealType:['dinner'], dietType:'omnivore', contains:['spicy'], kidFriendly:false,
       servings:1, prepMin:10, cookMin:15, nutrition:{cal:720,protein:53,carbs:87,fat:16,fiber:6},
       ingredients:[
         {name:'Spring onion',qty:'55',unit:'g',cat:'produce'},
@@ -1473,42 +1477,43 @@ function openMealSlot(key){
   var day = parts[0], slotKey = parts[1];
   var recipeMealType = SLOT_RECIPE_TYPE[slotKey];
 
-  var sortedRecipes = state.recipes.slice().sort(function(a,b){
-    var aMatch = a.mealType===recipeMealType ? 0 : 1;
-    var bMatch = b.mealType===recipeMealType ? 0 : 1;
-    if(aMatch !== bMatch) return aMatch - bMatch;
-    return a.name.localeCompare(b.name);
-  });
+  var allowedRecipes = state.recipes
+    .filter(function(r){ return r.mealType.indexOf(recipeMealType) !== -1; })
+    .sort(function(a,b){ return a.name.localeCompare(b.name); });
+  var datalistHtml = allowedRecipes.map(function(r){ return '<option value="'+escapeAttr(r.name)+'">'; }).join('');
 
-  function selectOptionsHtml(personId){
+  function currentValueFor(personId){
     var current = entry[personId];
-    return '<option value="">\u2014 choose a recipe \u2014</option>' + sortedRecipes.map(function(r){
-      var selected = (current && current.type==='recipe' && current.recipeId===r.id) ? ' selected' : '';
-      return '<option value="'+r.id+'"'+selected+'>'+escapeHtml(r.name)+' ('+r.mealType+')</option>';
-    }).join('');
+    if(!current) return '';
+    if(current.type === 'recipe'){
+      var r = findRecipe(current.recipeId);
+      return r ? r.name : '';
+    }
+    return current.title || '';
   }
 
   var rowsHtml = state.family.map(function(m){
-    var current = entry[m.id];
-    var customVal = (current && current.type==='custom') ? current.title : '';
     var chipsHtml = m.lunchSuggestions.length ? '<div class="chip-row">'+m.lunchSuggestions.map(function(s){
-      return '<div class="quick-chip" data-target="custom-'+m.id+'" data-select="select-'+m.id+'" data-fill="'+escapeAttr(s)+'">'+escapeHtml(s)+'</div>';
+      return '<div class="quick-chip" data-target="input-'+m.id+'" data-fill="'+escapeAttr(s)+'">'+escapeHtml(s)+'</div>';
     }).join('')+'</div>' : '';
     return '<div class="person-plan-row">'+
       '<div class="person-plan-head"><span class="swatch" style="background:'+m.color+';width:24px;height:24px;font-size:10px;">'+escapeHtml(m.name.charAt(0))+'</span><strong>'+escapeHtml(m.name)+'</strong></div>'+
-      '<select class="person-recipe-select" id="select-'+m.id+'" data-person="'+m.id+'">'+selectOptionsHtml(m.id)+'</select>'+
-      '<input type="text" class="person-custom-input" id="custom-'+m.id+'" data-person="'+m.id+'" placeholder="or type a custom meal" value="'+escapeAttr(customVal)+'" style="margin-top:6px;">'+
+      '<input type="text" class="person-custom-input" id="input-'+m.id+'" data-person="'+m.id+'" list="recipe-datalist" autocomplete="off" placeholder="Type to search '+MEAL_SLOT_LABEL[slotKey].toLowerCase()+' recipes, or enter something custom" value="'+escapeAttr(currentValueFor(m.id))+'">'+
       chipsHtml+
     '</div>';
   }).join('');
 
-  var quickOptions = '<option value="">Same meal for everyone\u2026</option>' + sortedRecipes.map(function(r){
-    return '<option value="'+r.id+'">'+escapeHtml(r.name)+' ('+r.mealType+')</option>';
+  var quickOptions = '<option value="">Same meal for everyone\u2026</option>' + allowedRecipes.map(function(r){
+    return '<option value="'+escapeAttr(r.name)+'">'+escapeHtml(r.name)+'</option>';
   }).join('');
 
+  var emptyNote = allowedRecipes.length === 0 ? '<div class="section-sub" style="margin:-8px 0 14px;">No recipes are tagged for '+MEAL_SLOT_LABEL[slotKey].toLowerCase()+' yet — typing a custom meal still works, or add one via the Recipes tab.</div>' : '';
+
   var html = '<div class="modal-head"><div class="modal-title">'+day+' \u2014 '+MEAL_SLOT_LABEL[slotKey]+(plannerMode==='template' ? ' (usual template)' : '')+'</div><button class="modal-close" id="modal-close-btn">&times;</button></div>'+
+    emptyNote+
     '<div class="form-row" style="margin-bottom:16px;"><div class="flex-row"><select id="quick-apply-select" style="flex:1;">'+quickOptions+'</select><button class="btn btn-ghost btn-sm" id="quick-apply-btn" type="button">Apply to everyone</button></div></div>'+
     rowsHtml+
+    '<datalist id="recipe-datalist">'+datalistHtml+'</datalist>'+
     '<div class="modal-actions">'+
       '<button class="btn btn-ghost" id="slot-remove-btn" type="button">Clear everyone</button>'+
       '<button class="btn btn-ghost" id="modal-cancel-btn" type="button">Cancel</button>'+
@@ -1520,18 +1525,16 @@ function openMealSlot(key){
   document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
 
   document.getElementById('quick-apply-btn').addEventListener('click', function(){
-    var recipeId = document.getElementById('quick-apply-select').value;
-    if(!recipeId) return;
+    var name = document.getElementById('quick-apply-select').value;
+    if(!name) return;
     state.family.forEach(function(m){
-      document.getElementById('select-'+m.id).value = recipeId;
-      document.getElementById('custom-'+m.id).value = '';
+      document.getElementById('input-'+m.id).value = name;
     });
   });
 
   Array.prototype.forEach.call(document.querySelectorAll('#modal-content .quick-chip'), function(chip){
     chip.addEventListener('click', function(){
       document.getElementById(chip.getAttribute('data-target')).value = chip.getAttribute('data-fill');
-      document.getElementById(chip.getAttribute('data-select')).value = '';
     });
   });
 
@@ -1545,11 +1548,12 @@ function openMealSlot(key){
     var newEntry = {};
     var anySet = false;
     state.family.forEach(function(m){
-      var recipeId = document.getElementById('select-'+m.id).value;
-      var customVal = document.getElementById('custom-'+m.id).value.trim();
-      if(recipeId){ newEntry[m.id] = {type:'recipe', recipeId:recipeId}; anySet = true; }
-      else if(customVal){ newEntry[m.id] = {type:'custom', title:customVal}; anySet = true; }
-      else { newEntry[m.id] = null; }
+      var typed = document.getElementById('input-'+m.id).value.trim();
+      if(!typed){ newEntry[m.id] = null; return; }
+      var matched = allowedRecipes.filter(function(r){ return r.name.toLowerCase() === typed.toLowerCase(); })[0];
+      if(matched){ newEntry[m.id] = {type:'recipe', recipeId:matched.id}; }
+      else { newEntry[m.id] = {type:'custom', title:typed}; }
+      anySet = true;
     });
     if(anySet){ source[key] = newEntry; } else { delete source[key]; }
     saveState(); renderPlanner(); if(plannerMode==='week') renderGrocery(); closeModal();
@@ -1588,7 +1592,7 @@ function renderFilters(){
 
 function renderRecipes(){
   var list = state.recipes.filter(function(r){
-    if(activeMealFilter && r.mealType !== activeMealFilter) return false;
+    if(activeMealFilter && r.mealType.indexOf(activeMealFilter) === -1) return false;
     if(activeDietFilter && r.dietType !== activeDietFilter) return false;
     if(searchTerm && r.name.toLowerCase().indexOf(searchTerm.toLowerCase()) === -1) return false;
     return true;
@@ -1600,7 +1604,7 @@ function renderRecipes(){
   }
   grid.innerHTML = list.map(function(r){
     return '<div class="recipe-card" data-id="'+r.id+'" tabindex="0" role="button">'+
-      '<div class="recipe-card-top"><div class="recipe-name">'+escapeHtml(r.name)+'</div><div class="meal-type-tag">'+r.mealType+'</div></div>'+
+      '<div class="recipe-card-top"><div class="recipe-name">'+escapeHtml(r.name)+'</div><div class="meal-type-tag">'+r.mealType.join(' / ')+'</div></div>'+
       '<div class="badge-row">'+
         '<span class="badge diet-'+r.dietType+'">'+DIET_LABEL[r.dietType]+'</span>'+
         (r.kidFriendly ? '<span class="badge kid">Kid-friendly</span>' : '')+
@@ -1628,7 +1632,7 @@ function openRecipeDetail(id){
     '<div class="badge-row" style="margin-bottom:14px;">'+
       '<span class="badge diet-'+r.dietType+'">'+DIET_LABEL[r.dietType]+'</span>'+
       (r.kidFriendly ? '<span class="badge kid">Kid-friendly</span>' : '')+
-      '<span class="meal-type-tag" style="align-self:center;">'+r.mealType+' · '+r.prepMin+' prep / '+r.cookMin+' cook min · serves '+r.servings+'</span>'+
+      '<span class="meal-type-tag" style="align-self:center;">'+r.mealType.join(' / ')+' · '+r.prepMin+' prep / '+r.cookMin+' cook min · serves '+r.servings+'</span>'+
     '</div>'+
     renderCompatStrip(r)+
     '<hr class="divider">'+
@@ -1694,11 +1698,13 @@ function openDeleteRecipeConfirm(r){
 }
 
 function openRecipeForm(existing, isImported){
-  var r = existing || { id:uid('r'), name:'', mealType:'dinner', dietType:'omnivore', contains:[], kidFriendly:false,
+  var r = existing || { id:uid('r'), name:'', mealType:['dinner'], dietType:'omnivore', contains:[], kidFriendly:false,
     servings:4, prepMin:10, cookMin:20, nutrition:{cal:0,protein:0,carbs:0,fat:0,fiber:0}, ingredients:[], steps:[] };
   var isEditingRecipe = state.recipes.some(function(x){ return x.id===r.id; });
 
-  var mealOpts = MEAL_TYPES.map(function(mt){ return '<option value="'+mt+'"'+(r.mealType===mt?' selected':'')+'>'+mt+'</option>'; }).join('');
+  var mealChecks = MEAL_TYPES.map(function(mt){
+    return '<label><input type="checkbox" value="'+mt+'" '+(r.mealType.indexOf(mt)!==-1?'checked':'')+'> '+mt+'</label>';
+  }).join('');
   var dietOpts = Object.keys(DIET_LABEL).map(function(d){ return '<option value="'+d+'"'+(r.dietType===d?' selected':'')+'>'+DIET_LABEL[d]+'</option>'; }).join('');
   var containsChecks = AVOID_TAGS.map(function(t){
     return '<label><input type="checkbox" value="'+t+'" '+(r.contains.indexOf(t)!==-1?'checked':'')+'> '+AVOID_LABEL[t]+'</label>';
@@ -1710,11 +1716,9 @@ function openRecipeForm(existing, isImported){
   var html = '<div class="modal-head"><div class="modal-title">'+titleText+'</div><button class="modal-close" id="modal-close-btn">&times;</button></div>'+
     (isImported ? '<div class="section-sub" style="margin:-8px 0 16px;">Pulled from the photo automatically — check everything (especially quantities and macros) before saving.</div>' : '')+
     '<div class="form-row"><label>Name</label><input type="text" id="f-name" value="'+escapeAttr(r.name)+'"></div>'+
-    '<div class="two-col">'+
-      '<div class="form-row"><label>Meal type</label><select id="f-mealtype">'+mealOpts+'</select></div>'+
-      '<div class="form-row"><label>Diet type</label><select id="f-diettype">'+dietOpts+'</select></div>'+
-    '</div>'+
-    '<div class="form-row"><label>Contains (may conflict with someone&#39;s avoid list)</label><div class="checkbox-grid">'+containsChecks+'</div></div>'+
+    '<div class="form-row"><label>Meal type — tick more than one if it works for either (e.g. lunch and dinner)</label><div class="checkbox-grid" id="f-mealtype-group">'+mealChecks+'</div></div>'+
+    '<div class="form-row"><label>Diet type</label><select id="f-diettype">'+dietOpts+'</select></div>'+
+    '<div class="form-row"><label>Contains (may conflict with someone&#39;s avoid list)</label><div class="checkbox-grid" id="f-contains-group">'+containsChecks+'</div></div>'+
     '<div class="form-row"><label><input type="checkbox" id="f-kidfriendly" '+(r.kidFriendly?'checked':'')+' style="width:auto;display:inline-block;margin-right:6px;">Generally kid-friendly</label></div>'+
     '<div class="two-col">'+
       '<div class="form-row"><label>Servings</label><input type="number" id="f-servings" value="'+r.servings+'" min="1"></div>'+
@@ -1741,8 +1745,11 @@ function openRecipeForm(existing, isImported){
   document.getElementById('f-save-btn').addEventListener('click', function(){
     var name = document.getElementById('f-name').value.trim();
     if(!name){ alert('Give the recipe a name first.'); return; }
+    var mealTypeSelected = [];
+    Array.prototype.forEach.call(document.querySelectorAll('#f-mealtype-group input[type=checkbox]:checked'), function(cb){ mealTypeSelected.push(cb.value); });
+    if(mealTypeSelected.length === 0){ alert('Tick at least one meal type.'); return; }
     var contains = [];
-    Array.prototype.forEach.call(document.querySelectorAll('#modal-content .checkbox-grid input[type=checkbox]:checked'), function(cb){ contains.push(cb.value); });
+    Array.prototype.forEach.call(document.querySelectorAll('#f-contains-group input[type=checkbox]:checked'), function(cb){ contains.push(cb.value); });
 
     var ingLines = document.getElementById('f-ingredients').value.split('\n').map(function(l){return l.trim();}).filter(Boolean);
     var ingredients = ingLines.map(function(line){
@@ -1759,7 +1766,7 @@ function openRecipeForm(existing, isImported){
 
     var updated = {
       id: r.id, name:name,
-      mealType: document.getElementById('f-mealtype').value,
+      mealType: mealTypeSelected,
       dietType: document.getElementById('f-diettype').value,
       contains: contains,
       kidFriendly: document.getElementById('f-kidfriendly').checked,
@@ -2115,6 +2122,29 @@ function setupHeaderActions(){
   document.getElementById('clear-checked-btn').addEventListener('click', function(){
     state.groceryChecked = {}; saveState(); renderGrocery();
   });
+  document.getElementById('sync-bring-btn').addEventListener('click', async function(){
+    var btn = this;
+    var statusEl = document.getElementById('sync-bring-status');
+    var originalText = btn.textContent;
+    btn.textContent = 'Syncing…';
+    btn.disabled = true;
+    statusEl.style.display = 'none';
+    try{
+      var resp = await fetch('/api/sync-bring', { method: 'POST' });
+      var data = await resp.json();
+      statusEl.textContent = data.message || (resp.ok ? 'Done.' : 'Something went wrong.');
+      statusEl.style.color = (resp.ok && data.ok) ? '' : 'var(--conflict)';
+      statusEl.style.display = 'block';
+    }catch(err){
+      console.error(err);
+      statusEl.textContent = 'Could not reach Bring — check your connection and try again.';
+      statusEl.style.color = 'var(--conflict)';
+      statusEl.style.display = 'block';
+    }finally{
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  });
   document.getElementById('mode-week-btn').addEventListener('click', function(){ setPlannerMode('week'); });
   document.getElementById('mode-template-btn').addEventListener('click', function(){ setPlannerMode('template'); });
   document.getElementById('view-day-btn').addEventListener('click', function(){ setPlannerViewMode('day'); });
@@ -2125,25 +2155,29 @@ function setupHeaderActions(){
     document.getElementById('import-recipe-input').click();
   });
   document.getElementById('import-recipe-input').addEventListener('change', async function(e){
-    var file = e.target.files && e.target.files[0];
+    var files = Array.prototype.slice.call(e.target.files || []);
     e.target.value = '';
-    if(!file) return;
-    if(!file.type || file.type.indexOf('image/') !== 0){ alert('Please choose an image file.'); return; }
+    if(files.length === 0) return;
+    var invalid = files.some(function(f){ return !f.type || f.type.indexOf('image/') !== 0; });
+    if(invalid){ alert('Please choose image files only.'); return; }
+    if(files.length > 6){ alert('Please choose 6 photos or fewer at a time — select just the pages for one recipe.'); return; }
     var btn = document.getElementById('import-recipe-btn');
     var originalText = btn.textContent;
-    btn.textContent = 'Reading recipe…';
+    btn.textContent = files.length > 1 ? 'Reading '+files.length+' photos\u2026' : 'Reading recipe\u2026';
     btn.disabled = true;
     try{
-      var base64 = await new Promise(function(resolve, reject){
-        var reader = new FileReader();
-        reader.onload = function(){ resolve(reader.result.split(',')[1]); };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      var images = await Promise.all(files.map(function(file){
+        return new Promise(function(resolve, reject){
+          var reader = new FileReader();
+          reader.onload = function(){ resolve({ imageBase64: reader.result.split(',')[1], mediaType: file.type }); };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }));
       var resp = await fetch('/api/extract-recipe', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ imageBase64: base64, mediaType: file.type })
+        body: JSON.stringify({ images: images })
       });
       var data = await resp.json();
       if(!resp.ok || data.error){
@@ -2155,12 +2189,14 @@ function setupHeaderActions(){
       if(!data.ingredients) data.ingredients = [];
       if(!data.steps) data.steps = [];
       if(!data.nutrition) data.nutrition = {cal:0,protein:0,carbs:0,fat:0,fiber:0};
-      if(!MEAL_TYPES.includes(data.mealType)) data.mealType = 'dinner';
+      if(!Array.isArray(data.mealType)) data.mealType = data.mealType ? [data.mealType] : [];
+      data.mealType = data.mealType.filter(function(mt){ return MEAL_TYPES.indexOf(mt) !== -1; });
+      if(data.mealType.length === 0) data.mealType = ['dinner'];
       if(!DIET_LABEL[data.dietType]) data.dietType = 'omnivore';
       openRecipeForm(data, true);
     }catch(err){
       console.error(err);
-      alert('Something went wrong reading that photo. Try again, or enter the recipe manually.');
+      alert('Something went wrong reading those photos. Try again, or enter the recipe manually.');
     }finally{
       btn.textContent = originalText;
       btn.disabled = false;
