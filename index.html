@@ -565,7 +565,7 @@ function defaultState(){
     weekTemplate: defaultWeekTemplate(),
     groceryChecked: {},
     weekLabel: '',
-    migrations: { addedBodyMetrics: true, migratedToPerPersonPlanner: true, restoredPersonalPlans: true }
+    migrations: { addedBodyMetrics: true, migratedToPerPersonPlanner: true, restoredPersonalPlans: true, normalizedMealTypeArrays: true }
   };
 }
 
@@ -1200,6 +1200,15 @@ async function loadState(){
             });
           });
           state.migrations.restoredPersonalPlans = true;
+        }
+
+        if(!state.migrations.normalizedMealTypeArrays){
+          (state.recipes || []).forEach(function(r){
+            if(!Array.isArray(r.mealType)){
+              r.mealType = r.mealType ? [r.mealType] : ['dinner'];
+            }
+          });
+          state.migrations.normalizedMealTypeArrays = true;
         }
         setStatus('saved');
       } else {
@@ -2093,6 +2102,14 @@ function importData(file){
           });
         });
         state.migrations.restoredPersonalPlans = true;
+      }
+      if(!state.migrations.normalizedMealTypeArrays){
+        (state.recipes || []).forEach(function(r){
+          if(!Array.isArray(r.mealType)){
+            r.mealType = r.mealType ? [r.mealType] : ['dinner'];
+          }
+        });
+        state.migrations.normalizedMealTypeArrays = true;
       }
       saveState();
       renderAll();
