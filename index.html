@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Gather — Family Meal Planner</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#2A2420">
@@ -2481,10 +2481,52 @@ function renderAll(){
   document.getElementById('week-label').value = state.weekLabel || '';
 }
 
+// iOS Safari's position:fixed doesn't reliably account for the on-screen
+// keyboard — it's calculated against the full layout viewport, not the
+// actually-visible area, so a fixed popup can end up partly or fully
+// off-screen once the keyboard opens, needing a scroll to find it. The
+// visualViewport API reports the real visible area, so this keeps the
+// modal locked to exactly that, keyboard or no keyboard.
+function setupViewportTracking(){
+  if(!window.visualViewport) return;
+  var overlay = document.getElementById('modal-overlay');
+  if(!overlay) return;
+  function syncOverlayToViewport(){
+    var vv = window.visualViewport;
+    overlay.style.width = vv.width + 'px';
+    overlay.style.height = vv.height + 'px';
+    overlay.style.left = vv.offsetLeft + 'px';
+    overlay.style.top = vv.offsetTop + 'px';
+    overlay.style.right = 'auto';
+    overlay.style.bottom = 'auto';
+  }
+  window.visualViewport.addEventListener('resize', syncOverlayToViewport);
+  window.visualViewport.addEventListener('scroll', syncOverlayToViewport);
+  syncOverlayToViewport();
+}
+
+// Belt-and-braces fix for the same underlying problem, but covering the
+// whole app, not just the modal — whenever any text field anywhere gets
+// tapped into (main page or inside a popup), nudge it into view rather
+// than trusting each browser/iOS version to get the keyboard math right
+// on its own. This is what actually stops the "I have to re-centre it
+// myself" experience, regardless of which specific quirk caused it.
+function setupFocusScroll(){
+  document.addEventListener('focusin', function(e){
+    var tag = e.target.tagName;
+    if(tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return;
+    setTimeout(function(){
+      e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 300); // give the keyboard's own animation time to finish first
+  });
+}
+
 async function init(){
   await loadState();
   setupTabs();
   setupHeaderActions();
+  setupViewportTracking();
+  setupFocusScroll();
   renderAll();
 }
 
