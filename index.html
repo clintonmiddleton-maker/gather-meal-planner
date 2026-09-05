@@ -249,6 +249,7 @@ body{
 .badge.diet-pescatarian{background:var(--slate);color:#fff;}
 .badge.diet-omnivore{background:var(--parchment-dim);color:var(--ink-soft);}
 .badge.kid{background:var(--mustard);color:#fff;}
+.badge.estimated{background:transparent;border:1px dashed var(--ink-soft);color:var(--ink-soft);}
 .recipe-quicknote{font-size:12.5px;color:var(--ink-soft);}
 
 /* ---------- Nutrition Facts label ---------- */
@@ -465,6 +466,7 @@ select{
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-ghost" id="import-recipe-btn" type="button">📷 Import from photo(s)</button>
         <input type="file" id="import-recipe-input" accept="image/*" multiple style="display:none;">
+        <button class="btn btn-ghost" id="describe-recipe-btn" type="button">✍️ Describe it</button>
         <button class="btn btn-rust" id="new-recipe-btn" type="button">+ New recipe</button>
       </div>
     </div>
@@ -1690,6 +1692,7 @@ function renderRecipes(){
       '<div class="badge-row">'+
         '<span class="badge diet-'+r.dietType+'">'+DIET_LABEL[r.dietType]+'</span>'+
         (r.kidFriendly ? '<span class="badge kid">Kid-friendly</span>' : '')+
+        (r.nutritionSource === 'described' ? '<span class="badge estimated">Estimated</span>' : '')+
       '</div>'+
       '<div class="recipe-quicknote">'+r.nutrition.cal+' kcal · '+r.prepMin+'+'+r.cookMin+' min · serves '+r.servings+'</div>'+
       renderCompatStrip(r)+
@@ -1714,6 +1717,7 @@ function openRecipeDetail(id){
     '<div class="badge-row" style="margin-bottom:14px;">'+
       '<span class="badge diet-'+r.dietType+'">'+DIET_LABEL[r.dietType]+'</span>'+
       (r.kidFriendly ? '<span class="badge kid">Kid-friendly</span>' : '')+
+      (r.nutritionSource === 'described' ? '<span class="badge estimated">Estimated</span>' : '')+
       '<span class="meal-type-tag" style="align-self:center;">'+r.mealType.join(' / ')+' · '+r.prepMin+' prep / '+r.cookMin+' cook min · serves '+r.servings+'</span>'+
     '</div>'+
     renderCompatStrip(r)+
@@ -1779,7 +1783,7 @@ function openDeleteRecipeConfirm(r){
   });
 }
 
-function openRecipeForm(existing, isImported){
+function openRecipeForm(existing, importSource){
   var r = existing || { id:uid('r'), name:'', mealType:['dinner'], dietType:'omnivore', contains:[], kidFriendly:false,
     servings:4, prepMin:10, cookMin:20, nutrition:{cal:0,protein:0,carbs:0,fat:0,fiber:0}, ingredients:[], steps:[] };
   var isEditingRecipe = state.recipes.some(function(x){ return x.id===r.id; });
@@ -1794,9 +1798,12 @@ function openRecipeForm(existing, isImported){
   var ingredientsText = r.ingredients.map(function(i){ return i.qty+' '+i.unit+' '+i.name+' ['+i.cat+']'; }).join('\n');
   var stepsText = r.steps.join('\n');
 
-  var titleText = isEditingRecipe ? 'Edit recipe' : (isImported ? 'Review imported recipe' : 'New recipe');
+  var titleText = isEditingRecipe ? 'Edit recipe' : (importSource ? 'Review recipe' : 'New recipe');
+  var importNote = importSource === 'photo'
+    ? 'Pulled from the photo automatically — check everything (especially quantities and macros) before saving.'
+    : (importSource === 'described' ? 'Built from your description — quantities and macros are estimated, check before saving.' : '');
   var html = '<div class="modal-head"><div class="modal-title">'+titleText+'</div><button class="modal-close" id="modal-close-btn">&times;</button></div>'+
-    (isImported ? '<div class="section-sub" style="margin:-8px 0 16px;">Pulled from the photo automatically — check everything (especially quantities and macros) before saving.</div>' : '')+
+    (importNote ? '<div class="section-sub" style="margin:-8px 0 16px;">'+importNote+'</div>' : '')+
     '<div class="form-row"><label>Name</label><input type="text" id="f-name" value="'+escapeAttr(r.name)+'"></div>'+
     '<div class="form-row"><label>Meal type — tick more than one if it works for either (e.g. lunch and dinner)</label><div class="checkbox-grid" id="f-mealtype-group">'+mealChecks+'</div></div>'+
     '<div class="form-row"><label>Diet type</label><select id="f-diettype">'+dietOpts+'</select></div>'+
@@ -1863,7 +1870,8 @@ function openRecipeForm(existing, isImported){
         fiber: parseInt(document.getElementById('f-fiber').value,10) || 0
       },
       ingredients: ingredients,
-      steps: steps
+      steps: steps,
+      nutritionSource: importSource || r.nutritionSource || 'manual'
     };
 
     if(isEditingRecipe){
@@ -2425,10 +2433,51 @@ function setupHeaderActions(){
       data.mealType = data.mealType.filter(function(mt){ return MEAL_TYPES.indexOf(mt) !== -1; });
       if(data.mealType.length === 0) data.mealType = ['dinner'];
       if(!DIET_LABEL[data.dietType]) data.dietType = 'omnivore';
-      openRecipeForm(data, true);
+      openRecipeForm(data, 'photo');
     }catch(err){
       console.error(err);
       alert((err && err.message) ? err.message : 'Something went wrong reading those photos. Try again, or enter the recipe manually.');
+    }finally{
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  });
+  document.getElementById('describe-recipe-btn').addEventListener('click', async function(){
+    var description = prompt('Describe the recipe — dish name and rough ingredients is enough:');
+    if(!description || !description.trim()) return;
+    var btn = this;
+    var originalText = btn.textContent;
+    btn.textContent = 'Building recipe…';
+    btn.disabled = true;
+    try{
+      var resp = await fetch('/api/extract-recipe', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ description: description.trim() })
+      });
+      var data;
+      try{
+        data = await resp.json();
+      }catch(parseErr){
+        throw new Error('The server sent back something unexpected (HTTP '+resp.status+').');
+      }
+      if(!resp.ok || data.error){
+        alert('Could not build that recipe: ' + (data.error || ('HTTP '+resp.status)));
+        return;
+      }
+      data.id = uid('r');
+      if(!data.contains) data.contains = [];
+      if(!data.ingredients) data.ingredients = [];
+      if(!data.steps) data.steps = [];
+      if(!data.nutrition) data.nutrition = {cal:0,protein:0,carbs:0,fat:0,fiber:0};
+      if(!Array.isArray(data.mealType)) data.mealType = data.mealType ? [data.mealType] : [];
+      data.mealType = data.mealType.filter(function(mt){ return MEAL_TYPES.indexOf(mt) !== -1; });
+      if(data.mealType.length === 0) data.mealType = ['dinner'];
+      if(!DIET_LABEL[data.dietType]) data.dietType = 'omnivore';
+      openRecipeForm(data, 'described');
+    }catch(err){
+      console.error(err);
+      alert((err && err.message) ? err.message : 'Something went wrong. Try again, or enter the recipe manually.');
     }finally{
       btn.textContent = originalText;
       btn.disabled = false;
