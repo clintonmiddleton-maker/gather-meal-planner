@@ -1,23 +1,16 @@
 import type { Context, Config } from "@netlify/functions";
 
-// Reads one or more photos of a recipe — usually one, but a recipe that
-// spans multiple pages (ingredients on one page, method on another) can
-// be sent as several photos together, treated as one recipe. Uses the
-// Anthropic API — the same Claude models this app was built with. Needs
-// ANTHROPIC_API_KEY set in Netlify's environment variables (get one at
-// console.anthropic.com — a separate account/key from a claude.ai login,
-// billed per use, but this is a tiny amount of usage per recipe).
+// Builds a recipe either from photos (existing flow) or from a short
+// text description (new flow, for recipes you know from memory but
+// have no photo of). Uses the Anthropic API — needs ANTHROPIC_API_KEY
+// set in Netlify's environment variables.
 //
-// This only ever returns extracted data for the client to show in the
-// review form — nothing is saved until the person confirms it there.
+// This only ever returns extracted/estimated data for the client to
+// show in the review form — nothing is saved until confirmed there.
 
 const MAX_IMAGES = 6;
 
-const EXTRACTION_PROMPT = `You are extracting a recipe from one or more photos into a strict JSON schema for a meal-planning app. Output ONLY valid JSON — no markdown code fences, no commentary before or after.
-
-If more than one photo is given, they are all part of the SAME recipe — likely different pages or sections of it (e.g. ingredients on one page, method on another, or a nutrition panel on a third). Combine everything across all the photos into ONE recipe object, not one output per photo.
-
-Match this exact shape:
+const SCHEMA_BLOCK = `Match this exact shape:
 {
   "name": string,
   "mealType": array of one or more from "breakfast" | "lunch" | "dinner" | "snack" | "treat" (most recipes need just one; only include more than one if the dish genuinely suits either, e.g. a dish that works equally as lunch or dinner),
@@ -30,9 +23,21 @@ Match this exact shape:
   "nutrition": { "cal": number, "protein": number, "carbs": number, "fat": number, "fiber": number },
   "ingredients": array of { "name": string, "qty": string, "unit": string, "cat": one of "produce" | "protein" | "dairy" | "pantry" },
   "steps": array of strings, each one method step, rewritten in your own words rather than copied verbatim from the source
-}
+}`;
+
+const EXTRACTION_PROMPT_PHOTOS = `You are extracting a recipe from one or more photos into a strict JSON schema for a meal-planning app. Output ONLY valid JSON — no markdown code fences, no commentary before or after.
+
+If more than one photo is given, they are all part of the SAME recipe — likely different pages or sections of it (e.g. ingredients on one page, method on another, or a nutrition panel on a third). Combine everything across all the photos into ONE recipe object, not one output per photo.
+
+${SCHEMA_BLOCK}
 
 If a field isn't visible anywhere across the photos (e.g. fiber isn't listed), give your best reasonable estimate rather than leaving it blank or zero. Keep ingredient names and quantities as close to the source as you can read them.`;
+
+const EXTRACTION_PROMPT_TEXT = `You are building a recipe entry from a short, casual description into a strict JSON schema for a meal-planning app. The description is likely just a dish name and rough ingredients, written from memory, with no quantities, macros, or method given. Output ONLY valid JSON — no markdown code fences, no commentary before or after.
+
+${SCHEMA_BLOCK}
+
+The description will rarely include exact quantities, macros, or method steps. Use your best reasonable judgement, based on how this dish is typically made, to fill in sensible quantities, a plausible method, and estimated nutrition — never leave a field blank or zero just because it wasn't stated. If the description names a portion (e.g. "50g biltong"), respect it exactly rather than guessing a typical serving size.`;
 
 interface ImageInput {
   imageBase64: string;
@@ -52,7 +57,7 @@ export default async (req: Request, context: Context) => {
     );
   }
 
-  let body: { images?: ImageInput[] };
+  let body: { images?: ImageInput[]; description?: string };
   try {
     body = await req.json();
   } catch {
@@ -63,30 +68,39 @@ export default async (req: Request, context: Context) => {
   }
 
   const images = body.images || [];
-  if (images.length === 0) {
-    return new Response(JSON.stringify({ error: "Missing image data." }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
-  }
-  if (images.length > MAX_IMAGES) {
-    return new Response(JSON.stringify({ error: `Please send ${MAX_IMAGES} photos or fewer at a time.` }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
-  }
-  const invalidImage = images.find((img) => !img.imageBase64 || !img.mediaType);
-  if (invalidImage) {
-    return new Response(JSON.stringify({ error: "One of the images is missing data." }), {
+  const description = (body.description || "").trim();
+
+  if (images.length === 0 && !description) {
+    return new Response(JSON.stringify({ error: "Provide photos or a description." }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
   }
 
-  const imageBlocks = images.map((img) => ({
-    type: "image",
-    source: { type: "base64", media_type: img.mediaType, data: img.imageBase64 },
-  }));
+  let content: any[];
+
+  if (images.length > 0) {
+    if (images.length > MAX_IMAGES) {
+      return new Response(JSON.stringify({ error: `Please send ${MAX_IMAGES} photos or fewer at a time.` }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    const invalidImage = images.find((img) => !img.imageBase64 || !img.mediaType);
+    if (invalidImage) {
+      return new Response(JSON.stringify({ error: "One of the images is missing data." }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    const imageBlocks = images.map((img) => ({
+      type: "image",
+      source: { type: "base64", media_type: img.mediaType, data: img.imageBase64 },
+    }));
+    content = [...imageBlocks, { type: "text", text: EXTRACTION_PROMPT_PHOTOS }];
+  } else {
+    content = [{ type: "text", text: `${EXTRACTION_PROMPT_TEXT}\n\nDescription: ${description}` }];
+  }
 
   let anthropicRes: Response;
   try {
@@ -100,12 +114,7 @@ export default async (req: Request, context: Context) => {
       body: JSON.stringify({
         model: "claude-sonnet-5",
         max_tokens: 2000,
-        messages: [
-          {
-            role: "user",
-            content: [...imageBlocks, { type: "text", text: EXTRACTION_PROMPT }],
-          },
-        ],
+        messages: [{ role: "user", content }],
       }),
     });
   } catch (e: any) {
@@ -137,7 +146,7 @@ export default async (req: Request, context: Context) => {
     parsed = JSON.parse(cleaned);
   } catch {
     return new Response(
-      JSON.stringify({ error: "Couldn't read a valid recipe from those photos. Try clearer images, or enter it manually." }),
+      JSON.stringify({ error: "Couldn't build a recipe from that. Try rephrasing, or enter it manually." }),
       { status: 422, headers: { "content-type": "application/json" } }
     );
   }
