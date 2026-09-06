@@ -250,6 +250,7 @@ body{
 .badge.diet-omnivore{background:var(--parchment-dim);color:var(--ink-soft);}
 .badge.kid{background:var(--mustard);color:#fff;}
 .badge.estimated{background:transparent;border:1px dashed var(--ink-soft);color:var(--ink-soft);}
+.badge.packaged{background:var(--line-strong);color:var(--ink);}
 .recipe-quicknote{font-size:12.5px;color:var(--ink-soft);}
 
 /* ---------- Nutrition Facts label ---------- */
@@ -1722,6 +1723,7 @@ function renderRecipes(){
         '<span class="badge diet-'+r.dietType+'">'+DIET_LABEL[r.dietType]+'</span>'+
         (r.kidFriendly ? '<span class="badge kid">Kid-friendly</span>' : '')+
         (r.nutritionSource === 'described' ? '<span class="badge estimated">Estimated</span>' : '')+
+        (r.excludeFromGrocery ? '<span class="badge packaged">Packaged</span>' : '')+
       '</div>'+
       '<div class="recipe-quicknote">'+r.nutrition.cal+' kcal · '+r.prepMin+'+'+r.cookMin+' min · serves '+r.servings+'</div>'+
       renderCompatStrip(r)+
@@ -1747,6 +1749,7 @@ function openRecipeDetail(id){
       '<span class="badge diet-'+r.dietType+'">'+DIET_LABEL[r.dietType]+'</span>'+
       (r.kidFriendly ? '<span class="badge kid">Kid-friendly</span>' : '')+
       (r.nutritionSource === 'described' ? '<span class="badge estimated">Estimated</span>' : '')+
+      (r.excludeFromGrocery ? '<span class="badge packaged">Packaged</span>' : '')+
       '<span class="meal-type-tag" style="align-self:center;">'+r.mealType.join(' / ')+' · '+r.prepMin+' prep / '+r.cookMin+' cook min · serves '+r.servings+'</span>'+
     '</div>'+
     renderCompatStrip(r)+
@@ -1838,6 +1841,7 @@ function openRecipeForm(existing, importSource){
     '<div class="form-row"><label>Diet type</label><select id="f-diettype">'+dietOpts+'</select></div>'+
     '<div class="form-row"><label>Contains (may conflict with someone&#39;s avoid list)</label><div class="checkbox-grid" id="f-contains-group">'+containsChecks+'</div></div>'+
     '<div class="form-row"><label><input type="checkbox" id="f-kidfriendly" '+(r.kidFriendly?'checked':'')+' style="width:auto;display:inline-block;margin-right:6px;">Generally kid-friendly</label></div>'+
+    '<div class="form-row"><label><input type="checkbox" id="f-excludegrocery" '+(r.excludeFromGrocery?'checked':'')+' style="width:auto;display:inline-block;margin-right:6px;">Packaged product — don\u2019t add its ingredients to the grocery list</label></div>'+
     '<div class="two-col">'+
       '<div class="form-row"><label>Servings</label><input type="number" id="f-servings" value="'+r.servings+'" min="1"></div>'+
       '<div class="form-row"><label>Prep + cook (min)</label><div class="flex-row"><input type="number" id="f-prep" value="'+r.prepMin+'" min="0" placeholder="prep"><input type="number" id="f-cook" value="'+r.cookMin+'" min="0" placeholder="cook"></div></div>'+
@@ -1888,6 +1892,7 @@ function openRecipeForm(existing, importSource){
       dietType: document.getElementById('f-diettype').value,
       contains: contains,
       kidFriendly: document.getElementById('f-kidfriendly').checked,
+      excludeFromGrocery: document.getElementById('f-excludegrocery').checked,
       servings: parseInt(document.getElementById('f-servings').value,10) || 1,
       prepMin: parseInt(document.getElementById('f-prep').value,10) || 0,
       cookMin: parseInt(document.getElementById('f-cook').value,10) || 0,
@@ -1915,10 +1920,29 @@ function openRecipeForm(existing, importSource){
 /* ============================================================
    RENDER: GROCERY
    ============================================================ */
+// Grocery quantities are grouped by name+unit, but the same ingredient
+// often gets written slightly differently across recipes: prep notes
+// ("garlic clove, pressed"), plurals ("clove" vs "cloves"), and a stray
+// unit word leaking into the name during parsing ("pc Garlic clove").
+// This normalizes those variants down to one grouping key without
+// touching the display name, which stays whatever was first seen.
+var GROCERY_UNIT_ALIASES = {
+  clove:'', cloves:'', pc:'', pcs:'', piece:'', pieces:'', unit:'', units:''
+};
+function groceryGroupKey(name, unit){
+  var base = (name || '').toLowerCase().trim();
+  base = base.replace(/^(pc|pcs|ml|g|kg|l|tsp|tbsp|cup|oz|lb)\s+/, '');
+  base = base.split(',')[0].trim();
+  if(base.length > 3 && base.slice(-1) === 's') base = base.slice(0, -1);
+  var unitKey = (unit || '').toLowerCase().trim();
+  if(GROCERY_UNIT_ALIASES.hasOwnProperty(unitKey)) unitKey = GROCERY_UNIT_ALIASES[unitKey];
+  return base + '|' + unitKey;
+}
+
 function addIngredientsToItems(items, ingredients, multiplier){
   multiplier = multiplier || 1;
   ingredients.forEach(function(ing){
-    var key = ing.name.toLowerCase()+'|'+ing.unit.toLowerCase();
+    var key = groceryGroupKey(ing.name, ing.unit);
     if(!items[key]) items[key] = { name:ing.name, unit:ing.unit, cat: (CATS.indexOf(ing.cat)!==-1?ing.cat:'pantry'), total:0, hasNumeric:true, freeform:[] };
     var n = parseFloat(ing.qty);
     if(isNaN(n)){ items[key].hasNumeric=false; items[key].freeform.push(ing.qty+' '+ing.unit); }
@@ -1949,7 +1973,7 @@ function renderGrocery(){
     });
     Object.keys(recipeCounts).forEach(function(recipeId){
       var r = findRecipe(recipeId);
-      if(!r) return;
+      if(!r || r.excludeFromGrocery) return;
       var peopleEating = recipeCounts[recipeId];
       var multiplier = r.servings > 0 ? (peopleEating / r.servings) : 1;
       addIngredientsToItems(items, r.ingredients, multiplier);
@@ -2131,7 +2155,7 @@ function renderLunchbox(){
       var pe = entry[personId];
       if(pe && pe.type === 'recipe'){
         var r = findRecipe(pe.recipeId);
-        if(r) addIngredientsToItems(items, r.ingredients);
+        if(r && !r.excludeFromGrocery) addIngredientsToItems(items, r.ingredients);
       }
     });
   });
