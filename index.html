@@ -1921,32 +1921,61 @@ function openRecipeForm(existing, importSource){
    RENDER: GROCERY
    ============================================================ */
 // Grocery quantities are grouped by name+unit, but the same ingredient
-// often gets written slightly differently across recipes: prep notes
-// ("garlic clove, pressed"), plurals ("clove" vs "cloves"), and a stray
-// unit word leaking into the name during parsing ("pc Garlic clove").
-// This normalizes those variants down to one grouping key without
-// touching the display name, which stays whatever was first seen.
-var GROCERY_UNIT_ALIASES = {
-  clove:'', cloves:'', pc:'', pcs:'', piece:'', pieces:'', unit:'', units:''
+// often gets written slightly differently across recipes: a quantity
+// descriptor baked into the name ("(1 pc) Banana", "(~2 tsp) Olive oil"),
+// a stray unit word leaking into the name during parsing ("pc Garlic
+// clove"), a prep instruction appended ("garlic clove, pressed"), a
+// descriptive word reordered ("Whey protein powder, flavoured" vs
+// "Flavoured whey protein powder"), or the same ingredient measured in
+// different-but-convertible units (1 tsp vs 9 tbsp of olive oil).
+// groceryNameKey() and the unit-dimension conversion below handle each
+// of those without touching the display name/unit, which stay whatever
+// was first seen. What this deliberately does NOT do: merge across
+// genuinely different units like "cup" (used loosely for solids, e.g.
+// a cup of salad leaves has no fixed weight) or merge names that only
+// match after removing a word that could be a real distinguishing
+// attribute (e.g. "raw" vs "cooked" chicken) — those stay separate
+// rather than risk silently combining two different shopping items.
+var GROCERY_PREP_WORDS = ['pressed','chopped','minced','diced','sliced','grated','crushed','peeled','melted','softened','crumbled','shredded','halved','quartered','cubed'];
+var GROCERY_COUNT_UNIT_ALIASES = { clove:'', cloves:'', pc:'', pcs:'', piece:'', pieces:'', unit:'', units:'' };
+var GROCERY_UNIT_CONVERT = {
+  tsp:{dim:'vol',toBase:5}, tbsp:{dim:'vol',toBase:15}, ml:{dim:'vol',toBase:1}, l:{dim:'vol',toBase:1000}, fl_oz:{dim:'vol',toBase:30},
+  g:{dim:'wt',toBase:1}, kg:{dim:'wt',toBase:1000}, oz:{dim:'wt',toBase:28.35}, lb:{dim:'wt',toBase:453.6}
 };
-function groceryGroupKey(name, unit){
+var GROCERY_BASE_UNIT_LABEL = { vol:'ml', wt:'g' };
+
+function groceryNameKey(name){
   var base = (name || '').toLowerCase().trim();
-  base = base.replace(/^(pc|pcs|ml|g|kg|l|tsp|tbsp|cup|oz|lb)\s+/, '');
-  base = base.split(',')[0].trim();
-  if(base.length > 3 && base.slice(-1) === 's') base = base.slice(0, -1);
-  var unitKey = (unit || '').toLowerCase().trim();
-  if(GROCERY_UNIT_ALIASES.hasOwnProperty(unitKey)) unitKey = GROCERY_UNIT_ALIASES[unitKey];
-  return base + '|' + unitKey;
+  base = base.replace(/^\([^)]*\)\s*/, '');       // leading "(1 pc) " / "(~2 tsp) " style descriptor
+  base = base.replace(/\s*\([^)]*\)\s*$/, '');    // trailing "(I&J)" style brand note
+  base = base.replace(/^(pc|pcs|ml|g|kg|l|tsp|tbsp|cup|oz|lb)\s+/, ''); // bare unit word with no parens
+  base = base.replace(/,/g, ' ');
+  var words = base.split(/\s+/).filter(Boolean).filter(function(w){ return GROCERY_PREP_WORDS.indexOf(w) === -1; });
+  words = words.map(function(w){ return (w.length > 3 && w.slice(-1) === 's') ? w.slice(0, -1) : w; });
+  words.sort();
+  return words.join(' ');
+}
+
+function groceryUnitInfo(unit){
+  var raw = (unit || '').toLowerCase().trim();
+  var conv = GROCERY_UNIT_CONVERT[raw];
+  if(conv) return { groupUnit: conv.dim, toBase: conv.toBase, displayUnit: GROCERY_BASE_UNIT_LABEL[conv.dim] };
+  var aliased = GROCERY_COUNT_UNIT_ALIASES.hasOwnProperty(raw) ? GROCERY_COUNT_UNIT_ALIASES[raw] : raw;
+  return { groupUnit: aliased, toBase: 1, displayUnit: unit };
 }
 
 function addIngredientsToItems(items, ingredients, multiplier){
   multiplier = multiplier || 1;
   ingredients.forEach(function(ing){
-    var key = groceryGroupKey(ing.name, ing.unit);
-    if(!items[key]) items[key] = { name:ing.name, unit:ing.unit, cat: (CATS.indexOf(ing.cat)!==-1?ing.cat:'pantry'), total:0, hasNumeric:true, freeform:[] };
+    var nameKey = groceryNameKey(ing.name);
+    if(!items[nameKey]) items[nameKey] = { name: ing.name, cat: (CATS.indexOf(ing.cat)!==-1?ing.cat:'pantry'), parts: {} };
+    var unitInfo = groceryUnitInfo(ing.unit);
+    var parts = items[nameKey].parts;
+    if(!parts[unitInfo.groupUnit]) parts[unitInfo.groupUnit] = { unit:unitInfo.displayUnit, total:0, hasNumeric:true, freeform:[] };
+    var part = parts[unitInfo.groupUnit];
     var n = parseFloat(ing.qty);
-    if(isNaN(n)){ items[key].hasNumeric=false; items[key].freeform.push(ing.qty+' '+ing.unit); }
-    else { items[key].total += n * multiplier; }
+    if(isNaN(n)){ part.hasNumeric = false; part.freeform.push(ing.qty+' '+ing.unit); }
+    else { part.total += n * unitInfo.toBase * multiplier; }
   });
 }
 
@@ -1997,9 +2026,13 @@ function renderGrocery(){
     if(byCat[cat].length === 0) return;
     html += '<div class="grocery-section"><h3>'+CAT_LABEL[cat]+'</h3>';
     byCat[cat].sort(function(a,b){ return a.name.localeCompare(b.name); }).forEach(function(it){
-      var itemKey = (cat+'|'+it.name+'|'+it.unit).toLowerCase();
-      var roundedTotal = Math.round(it.total * 100) / 100;
-      var qtyDisplay = it.hasNumeric ? (roundedTotal + (it.unit?' '+it.unit:'')) : it.freeform.join(' + ');
+      var itemKey = (cat+'|'+it.name).toLowerCase();
+      var qtyDisplay = Object.keys(it.parts).map(function(pk){
+        var p = it.parts[pk];
+        if(!p.hasNumeric) return p.freeform.join(' + ');
+        var rounded = Math.round(p.total * 100) / 100;
+        return rounded + (p.unit ? ' '+p.unit : '');
+      }).join(' + ');
       var checked = state.groceryChecked[itemKey] ? 'checked' : '';
       html += '<div class="grocery-item'+(checked?' checked':'')+'" data-key="'+itemKey+'">'+
         '<input type="checkbox" '+checked+' data-item-key="'+itemKey+'">'+
