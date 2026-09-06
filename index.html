@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Gather — Family Meal Planner</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#2A2420">
@@ -33,7 +33,7 @@
 }
 
 *{box-sizing:border-box;}
-html,body{margin:0;padding:0;}
+html,body{margin:0;padding:0;touch-action:pan-x pan-y;}
 body{
   background:var(--parchment);
   color:var(--ink);
@@ -533,9 +533,9 @@ var DIET_RANK = { vegan:0, vegetarian:1, pescatarian:2, omnivore:3 };
 var DIET_LABEL = { vegan:'Vegan', vegetarian:'Vegetarian', pescatarian:'Pescatarian', omnivore:'Omnivore' };
 var AVOID_TAGS = ['dairy','gluten','nuts','egg','fish','spicy'];
 var AVOID_LABEL = { dairy:'Dairy', gluten:'Gluten', nuts:'Nuts', egg:'Egg', fish:'Fish', spicy:'Spice' };
-var MEAL_SLOTS = ['breakfast','lunch','dinner'];
-var MEAL_SLOT_LABEL = { breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner' };
-var SLOT_RECIPE_TYPE = { breakfast:'breakfast', lunch:'lunch', dinner:'dinner' };
+var MEAL_SLOTS = ['breakfast','lunch','dinner','snack'];
+var MEAL_SLOT_LABEL = { breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack' };
+var SLOT_RECIPE_TYPE = { breakfast:['breakfast'], lunch:['lunch'], dinner:['dinner'], snack:['snack','treat'] };
 var MEAL_TYPES = ['breakfast','lunch','dinner','snack','treat'];
 var DAYS = ['Mon','Tue','Wed','Thu','Fri'];
 var CATS = ['produce','protein','dairy','pantry'];
@@ -1171,10 +1171,16 @@ async function backendSet(value){
     var result = await window.storage.set(STORAGE_KEY, JSON.stringify(value), false);
     return !!result;
   }
+  var body = JSON.stringify(value);
+  // keepalive lets the request survive the page being torn down, but
+  // browsers cap keepalive request bodies at ~64KB — skip it for
+  // larger payloads rather than risk the fetch being rejected outright.
+  var useKeepalive = body.length < 60000;
   var resp = await fetch('/api/state', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(value)
+    body: body,
+    keepalive: useKeepalive
   });
   if(!resp.ok) throw new Error('Storage set failed: '+resp.status);
   return true;
@@ -1267,19 +1273,42 @@ async function loadState(){
 }
 
 var saveTimer = null;
+var pendingSave = false;
 function saveState(){
   setStatus('saving…');
+  pendingSave = true;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async function(){
-    try{
-      var ok = await backendSet(state);
-      setStatus(ok ? 'saved' : 'save failed');
-    }catch(e){
-      console.error('Storage save failed.', e);
-      setStatus('offline (not saved)');
-    }
-  }, 250);
+  saveTimer = setTimeout(flushSave, 250);
 }
+
+async function flushSave(){
+  if(!pendingSave) return;
+  pendingSave = false;
+  clearTimeout(saveTimer);
+  try{
+    var ok = await backendSet(state);
+    setStatus(ok ? 'saved' : 'save failed');
+  }catch(e){
+    console.error('Storage save failed.', e);
+    setStatus('offline (not saved)');
+  }
+}
+
+// If the tab/app is backgrounded or closed shortly after a save was
+// triggered (e.g. tapping Save then immediately locking the phone or
+// swiping away), don't lose it waiting on the debounce — flush now.
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'hidden') flushSave();
+});
+window.addEventListener('pagehide', function(){ flushSave(); });
+
+// Block iOS Safari's native pinch-zoom gesture. The viewport meta tag
+// and touch-action CSS handle most browsers, but iOS Safari (especially
+// when added to the Home Screen) can still allow pinch-zoom unless the
+// gesture events themselves are cancelled.
+['gesturestart','gesturechange','gestureend'].forEach(function(evt){
+  document.addEventListener(evt, function(e){ e.preventDefault(); });
+});
 
 /* ============================================================
    COMPATIBILITY LOGIC
@@ -1525,10 +1554,10 @@ function openMealSlot(key){
   var entry = source[key] || {};
   var parts = key.split('-');
   var day = parts[0], slotKey = parts[1];
-  var recipeMealType = SLOT_RECIPE_TYPE[slotKey];
+  var recipeMealTypes = SLOT_RECIPE_TYPE[slotKey];
 
   var allowedRecipes = state.recipes
-    .filter(function(r){ return r.mealType.indexOf(recipeMealType) !== -1; })
+    .filter(function(r){ return recipeMealTypes.some(function(t){ return r.mealType.indexOf(t) !== -1; }); })
     .sort(function(a,b){ return a.name.localeCompare(b.name); });
 
   function currentValueFor(personId){
