@@ -112,6 +112,18 @@ export function cleanName(raw: string): string {
   const kept = tokens.filter((t) => !PREP_WORDS.has(lettersOnly(t)));
   if (kept.length > 0) tokens = kept; // never strip a name down to nothing
 
+  // Repeated words are a leftover of messy source text; keep the last one.
+  const seenWords = new Set<string>();
+  tokens = tokens
+    .reverse()
+    .filter((t) => {
+      const k = t.toLowerCase();
+      if (seenWords.has(k)) return false;
+      seenWords.add(k);
+      return true;
+    })
+    .reverse();
+
   s = tokens.join(" ").replace(/^[\s\-,;:]+|[\s\-,;:]+$/g, "");
   if (!s) return original;
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -131,7 +143,14 @@ const tokenize = (s: string): string[] =>
 
 // Light singular/plural folding, applied to both sides so
 // "tomatoes" lines up with "tomato" and "eggs" with "egg".
+const SPELLING: Record<string, string> = {
+  leaves: "leaf", loaves: "loaf", halves: "half",
+  chili: "chilli", chilies: "chilli", chillies: "chilli", chilly: "chilli",
+  yogurt: "yoghurt", yogurts: "yoghurt",
+};
+
 export function stem(w: string): string {
+  if (SPELLING[w]) return SPELLING[w];
   if (w.length > 4 && w.endsWith("ies")) return w.slice(0, -3) + "y";
   if (w.length > 4 && w.endsWith("oes")) return w.slice(0, -2);
   if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us")) return w.slice(0, -1);
@@ -140,10 +159,21 @@ export function stem(w: string): string {
 
 const stemmedWords = (s: string): string[] => tokenize(s).map(stem);
 
+// Bring's catalog also covers household, health, pet and garden items.
+// Matching against those gives wrong results for food (its "Seeds" are
+// garden seeds, its "Vitamins" are in the pharmacy aisle), so they're left out.
+const NON_FOOD_SECTIONS = new Set([
+  "Haushalt & Gesundheit",
+  "Pflege & Gesundheit",
+  "Tierbedarf",
+  "Baumarkt & Garten",
+]);
+
 export function buildIndex(sections: any[]): IndexedEntry[] {
   const out: IndexedEntry[] = [];
   const seen = new Set<string>();
   for (const section of sections || []) {
+    if (NON_FOOD_SECTIONS.has(section?.sectionId)) continue;
     for (const item of section?.items || []) {
       if (!item?.itemId || !item?.name || seen.has(item.itemId)) continue;
       seen.add(item.itemId);
@@ -153,13 +183,122 @@ export function buildIndex(sections: any[]): IndexedEntry[] {
   return out;
 }
 
+// UK / South African wording that Bring words differently.
+const SYNONYMS: Record<string, string[]> = {
+  mayo: ["mayonnaise"],
+  houmous: ["hummus"],
+  hommus: ["hummus"],
+  mince: ["minced", "meat"],
+};
+
+// Words describing the form something comes in. "Lettuce leaves" is
+// lettuce, so these are skipped when working out the main noun.
+const FORM_WORDS = new Set([
+  "leaf", "slice", "piece", "chunk", "cube", "strip", "wedge", "floret",
+  "stick", "sprig", "bunch", "head",
+]);
+
+// Words that mean the vegetable when "pepper" is used that way. Anything
+// else (plain "pepper", "salt and pepper") is the seasoning.
+const VEG_PEPPER_WORDS = new Set([
+  "bell", "red", "green", "yellow", "orange", "sweet", "hot", "chilli",
+  "jalapeno", "stuffed", "roasted", "mini", "peppadew", "peppers",
+]);
+
+// Bring's "Pepper" is the vegetable; the spice is "Black Pepper", and
+// a bread roll is filed as "Bread roll".
+function expandTokens(tokens: string[]): string[] {
+  const out: string[] = [];
+  for (const t of tokens) {
+    const syn = SYNONYMS[t];
+    if (syn) out.push(...syn);
+    else out.push(t);
+  }
+  const pi = out.indexOf("pepper");
+  if (pi >= 0 && !out.includes("black") && !out.some((w) => VEG_PEPPER_WORDS.has(w))) {
+    out.splice(pi, 0, "black");
+  }
+  const ri = out.findIndex((w) => w === "roll" || w === "rolls");
+  if (ri >= 0 && !out.some((w) => w === "bread" || w === "dinner" || w === "spring" || w === "sushi")) {
+    out.splice(ri, 0, "bread");
+  }
+  return out;
+}
+
+// Where Bring words something differently, or has a sensible general item
+// for it. "target" is the name shown in Bring (English); its internal key
+// is looked up in the live catalog, and the specific wording is kept in the
+// quantity line, e.g. Dip, "150 ml (tzatziki)".
+interface AliasRule {
+  any: string[]; // at least one of these words must be present
+  all?: string[]; // and all of these
+  not?: string[]; // and none of these
+  target: string;
+  quiet?: boolean; // a pure synonym: don't repeat the matched words in the note
+}
+
+// Checked BEFORE normal matching, where normal matching would pick the
+// wrong thing: "spring onion" would otherwise land on plain Onions.
+const PRIORITY_ALIASES: AliasRule[] = [
+  { any: ["spring"], all: ["onion"], target: "Scallions", quiet: true },
+];
+
+// Checked only when normal matching finds nothing.
+const FALLBACK_ALIASES: AliasRule[] = [
+  { any: ["hummus", "tzatziki", "guacamole", "salsa"], target: "Dip" },
+  { any: ["wrap"], target: "Tortillas" },
+  { any: ["wing"], target: "Chicken Wings" },
+  {
+    any: ["drumstick", "nugget", "patty", "burger", "thigh", "tender", "schnitzel", "strip", "leg"],
+    all: ["chicken"],
+    target: "Chicken",
+  },
+  { any: ["ostrich", "springbok", "venison", "kudu"], target: "Meat" },
+  { any: ["white"], all: ["egg"], target: "Eggs" },
+  { any: ["spray"], all: ["cooking"], target: "Oil" },
+  { any: ["seed"], target: "Nuts" },
+  { any: ["oat"], not: ["milk", "drink", "bar", "cake", "biscuit"], target: "Oatmeal", quiet: true },
+];
+
 function matchOne(segment: string, index: IndexedEntry[]): CatalogMatch | null {
-  const rawTokens = tokenize(segment);
+  const rawTokens = expandTokens(tokenize(segment));
   const stemmed = rawTokens.map(stem);
   if (stemmed.length === 0) return null;
   const present = new Set(stemmed);
-  const head = stemmed[stemmed.length - 1]; // "chicken breast" -> breast
+  // The main noun, ignoring form words: "lettuce leaves" -> lettuce
+  const nouns = stemmed.filter((w) => !FORM_WORDS.has(w));
+  const head = (nouns.length ? nouns : stemmed)[(nouns.length ? nouns : stemmed).length - 1];
   const phrase = stemmed.join(" ");
+
+  const leftoverFor = (entry: IndexedEntry, alsoCovered?: Set<string>): string => {
+    const covered = new Set(entry.words);
+    if (alsoCovered) alsoCovered.forEach((w) => covered.add(w));
+    return rawTokens
+      .filter(
+        (t, i) =>
+          t.length > 1 && // drops stray letters like the "I" and "J" of a brand code
+          !covered.has(stemmed[i]) &&
+          !LEFTOVER_IGNORE.has(t) &&
+          !FORM_WORDS.has(stemmed[i])
+      )
+      .join(" ");
+  };
+
+  const applyAlias = (rules: AliasRule[]): CatalogMatch | null => {
+    for (const r of rules) {
+      if (!r.any.some((w) => present.has(w))) continue;
+      if (r.all && !r.all.every((w) => present.has(w))) continue;
+      if (r.not && r.not.some((w) => present.has(w))) continue;
+      const target = index.find((e) => e.name.toLowerCase() === r.target.toLowerCase());
+      if (!target) continue; // the live catalog doesn't have it, so skip the rule
+      const quietWords = r.quiet ? new Set([...r.any, ...(r.all || [])]) : undefined;
+      return { entry: target, leftover: leftoverFor(target, quietWords) };
+    }
+    return null;
+  };
+
+  const early = applyAlias(PRIORITY_ALIASES);
+  if (early) return early;
 
   let best: IndexedEntry | null = null;
   let bestScore = -1;
@@ -179,12 +318,11 @@ function matchOne(segment: string, index: IndexedEntry[]): CatalogMatch | null {
       bestScore = score;
     }
   }
-  if (!best) return null;
+  if (!best) return applyAlias(FALLBACK_ALIASES);
 
-  const covered = new Set(best.words);
-  const leftoverTokens = rawTokens.filter((t, i) => !covered.has(stemmed[i]) && !LEFTOVER_IGNORE.has(t));
-  if (DAIRY_HEADS.has(head) && leftoverTokens.some((t) => NOT_DAIRY_WORDS.has(stem(t)))) return null;
-  return { entry: best, leftover: leftoverTokens.join(" ") };
+  const leftover = leftoverFor(best);
+  if (DAIRY_HEADS.has(head) && leftover.split(" ").some((t) => NOT_DAIRY_WORDS.has(stem(t)))) return null;
+  return { entry: best, leftover };
 }
 
 export function matchCatalog(cleaned: string, index: IndexedEntry[]): CatalogMatch | null {
@@ -207,11 +345,27 @@ export function matchCatalog(cleaned: string, index: IndexedEntry[]): CatalogMat
 /* Combining variants into one Bring item                               */
 /* ------------------------------------------------------------------ */
 
+// Source data sometimes has a half-split quantity, like a unit of "(50".
+// A unit with unbalanced brackets is dropped rather than shown broken.
+function cleanUnit(u: string): string {
+  const unit = (u || "").trim();
+  const opens = (unit.match(/\(/g) || []).length;
+  const closes = (unit.match(/\)/g) || []).length;
+  return opens === closes ? unit : "";
+}
+
+const formatNumber = (n: number, unit: string): string => {
+  const rounded = Math.round(n * 100) / 100;
+  // "1" with a unit of "-2" is really the range "1-2".
+  if (/^[-\u2013]\s*\d/.test(unit)) return `${rounded}${unit.replace(/\s+/g, "")}`;
+  return `${rounded}${unit ? " " + unit : ""}`;
+};
+
 export function mergeQuantity(parts: AggItem[]): string {
   const sums = new Map<string, { unit: string; total: number }>();
   const freeform: string[] = [];
   for (const p of parts) {
-    const unit = (p.unit || "").trim();
+    const unit = cleanUnit(p.unit);
     const key = unit.toLowerCase();
     if (p.total > 0) {
       const cur = sums.get(key) || { unit, total: 0 };
@@ -223,24 +377,27 @@ export function mergeQuantity(parts: AggItem[]): string {
       if (t && !freeform.includes(t)) freeform.push(t);
     }
   }
-  const numeric = [...sums.values()].map(
-    (s) => `${Math.round(s.total * 100) / 100}${s.unit ? " " + s.unit : ""}`
-  );
+  const numeric = [...sums.values()].map((s) => formatNumber(s.total, s.unit));
   return [...numeric, ...freeform].join(" + ");
 }
 
-export function planPushes(allItems: AggItem[], customItems: CustomItem[], index: IndexedEntry[]): PlannedPush[] {
+const COMPOUND_SPLIT = /\s+(?:and|&)\s+/i;
+
+export function planPushes(
+  allItems: AggItem[],
+  customItems: CustomItem[],
+  index: IndexedEntry[],
+  skip: string[] = []
+): { plan: PlannedPush[]; skipped: string[] } {
   interface Group {
     push: PlannedPush;
     parts: AggItem[];
     leftovers: Set<string>;
   }
   const groups = new Map<string, Group>();
+  const skipped: string[] = [];
 
-  const add = (rawName: string, part: AggItem | null) => {
-    const cleaned = cleanName(rawName);
-    if (!cleaned) return;
-    const m = matchCatalog(cleaned, index);
+  const addResolved = (rawName: string, cleaned: string, m: CatalogMatch | null, part: AggItem | null) => {
     const key = m ? "id:" + m.entry.itemId : "txt:" + stemmedWords(cleaned).join(" ");
     let g = groups.get(key);
     if (!g) {
@@ -263,21 +420,46 @@ export function planPushes(allItems: AggItem[], customItems: CustomItem[], index
     if (m && m.leftover) g.leftovers.add(m.leftover.toLowerCase());
   };
 
+  const add = (rawName: string, part: AggItem | null) => {
+    const cleaned = cleanName(rawName);
+    if (!cleaned) return;
+
+    // Anything on the skip list (e.g. additives that are really a product's
+    // label contents, not things to buy) never reaches Bring.
+    const haystack = `${rawName} ${cleaned}`.toLowerCase();
+    if (skip.some((w) => haystack.includes(w))) {
+      if (!skipped.includes(cleaned)) skipped.push(cleaned);
+      return;
+    }
+
+    // "Salt and pepper" is two items. Split it only when every piece is a
+    // real catalog item, otherwise ("Vitamin and mineral premix") leave it whole.
+    if (COMPOUND_SPLIT.test(cleaned)) {
+      const pieces = cleaned.split(COMPOUND_SPLIT).map((x) => x.trim()).filter(Boolean);
+      const matches = pieces.map((piece) => matchCatalog(piece, index));
+      if (pieces.length > 1 && matches.every(Boolean)) {
+        pieces.forEach((piece, i) => addResolved(rawName, piece, matches[i], part));
+        return;
+      }
+    }
+    addResolved(rawName, cleaned, matchCatalog(cleaned, index), part);
+  };
+
   allItems.forEach((it) => add(it.name, it));
   // Typed-in meals (e.g. "Coco pops", "Chicken burger") have no structured
   // ingredients, so the meal name itself goes on the list as a reminder.
   customItems.forEach((c) => add(c.title, null));
 
-  const out: PlannedPush[] = [];
+  const plan: PlannedPush[] = [];
   for (const g of groups.values()) {
     const qty = mergeQuantity(g.parts);
     const extra = [...g.leftovers].join(", ");
     let spec = [qty, extra ? `(${extra})` : ""].filter(Boolean).join(" ");
     if (spec.length > 80) spec = spec.slice(0, 77) + "...";
     g.push.spec = spec;
-    out.push(g.push);
+    plan.push(g.push);
   }
-  return out;
+  return { plan, skipped };
 }
 
 /* ------------------------------------------------------------------ */
@@ -347,9 +529,10 @@ export async function pushToBring(
   listName: string,
   allItems: AggItem[],
   customItems: CustomItem[],
-  index: IndexedEntry[]
+  index: IndexedEntry[],
+  skip: string[] = []
 ): Promise<BringSyncResult> {
-  const plan = planPushes(allItems, customItems, index);
+  const { plan, skipped } = planPushes(allItems, customItems, index, skip);
 
   const results: { push: PlannedPush; ok: boolean }[] = plan.map((push) => ({ push, ok: false }));
   await runInBatches(plan, 5, async (push, i) => {
@@ -389,6 +572,9 @@ export async function pushToBring(
   if (folded.length > 0) {
     const shown = folded.slice(0, 25).join("; ");
     parts.push(`Renamed or combined: ${shown}${folded.length > 25 ? "; and more" : ""}.`);
+  }
+  if (skipped.length > 0) {
+    parts.push(`Skipped (on your skip list): ${skipped.join(", ")}.`);
   }
   if (failed.length > 0) {
     parts.push(`Did NOT push (add these manually): ${failed.map((p) => p.displayName).join(", ")}.`);
@@ -450,7 +636,11 @@ export async function syncGroceriesToBring(): Promise<BringSyncResult> {
     const index = await buildCatalogIndex(bring, locale);
 
     const allItems = ([] as AggItem[]).concat(byCat.produce, byCat.protein, byCat.dairy, byCat.pantry);
-    return await pushToBring(bring, target.listUuid, listName, allItems, customItems, index);
+    const skip = (Netlify.env.get("BRING_SKIP_ITEMS") || "")
+      .split(",")
+      .map((w) => w.trim().toLowerCase())
+      .filter(Boolean);
+    return await pushToBring(bring, target.listUuid, listName, allItems, customItems, index, skip);
   } catch (e: any) {
     // Anything unexpected (reading saved data, building the list, etc.)
     // still comes back as a proper result instead of crashing the
